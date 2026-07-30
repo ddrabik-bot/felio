@@ -6,8 +6,9 @@ Felio is a Laravel application scaffold. This bootstrap intentionally contains n
 
 - PHP 8.3+ (the application image uses PHP 8.3 FPM)
 - Laravel 13.23.0
-- Vue 3, Inertia.js, and Vite (installed during this bootstrap)
-- Pest (installed during this bootstrap)
+- Vue 3.5.40, Inertia Vue 3.6.1, Vite 8.2.0
+- Inertia Laravel 3.2.1
+- Pest 4.7.5 with Pest Laravel plugin 4.1.0
 - Nginx 1.27
 - Node.js 22 (containerized build tooling)
 
@@ -25,10 +26,10 @@ The frontend and testing dependencies are installed with:
 
 ```sh
 docker compose run --rm composer composer require inertiajs/inertia-laravel
-docker compose run --rm composer composer require --dev pestphp/pest
-# install Pest's Laravel integration
-docker compose run --rm composer php artisan pest:install
-docker compose run --rm node npm install
+docker compose run --rm composer composer require --dev pestphp/pest:^4.7.5 pestphp/pest-plugin-laravel --with-all-dependencies
+docker compose run --rm composer composer config platform.php 8.3.0
+docker compose run --rm composer composer update --with-all-dependencies
+docker compose run --rm node npm install vue @vitejs/plugin-vue @inertiajs/vue3
 ```
 
 ## Run the application
