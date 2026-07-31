@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+      - 'feat/**'
+      - 'ci/**'
+  pull_request:
+    branches:
+      - master
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: Foundation verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPOSE_PROJECT_NAME: felio-ci
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Create the external tunnel network required by Compose
+        run: docker network inspect cloudflare_tunnel >/dev/null 2>&1 || docker network create cloudflare_tunnel
+
+      - name: Build application images
+        run: docker compose build
+
+      - name: Install locked PHP dependencies
+        run: docker compose run --rm composer install --prefer-dist --no-interaction --no-progress
+
+      - name: Boot PostgreSQL, PHP application, and web server
+        run: docker compose up -d --wait db app web
+
+      - name: Run Laravel migrations
+        run: docker compose run --rm app php artisan migrate --force
+
+      - name: Run Pest
+        run: docker compose run --rm app php artisan test
+
+      - name: Install locked frontend dependencies
+        run: docker compose run --rm node npm ci
+
+      - name: Build frontend assets
+        run: docker compose run --rm node npm run build
+
+      - name: Require HTTP 200 from the health endpoint
+        run: |
+          status="$(curl --fail-with-body --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 --output /dev/null --write-out '%{http_code}' http://localhost:8086/health)"
+          test "$status" = '200'
+
+      - name: Show Compose status on failure
+        if: failure()
+        run: docker compose ps && docker compose logs --no-color
+
+      - name: Tear down services
+        if: always()
+        run: docker compose down --volumes --remove-orphans
