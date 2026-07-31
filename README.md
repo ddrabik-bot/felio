@@ -4,75 +4,114 @@ Felio is a Laravel application scaffold. This bootstrap intentionally contains n
 
 ## Stack
 
-- PHP 8.3+ (the application image uses PHP 8.3)
+- PHP 8.3 (in the application image)
 - Laravel 13.23.0
-- Vue 3.5.40, Inertia Vue 3.6.1, Vite 8.2.0
-- Inertia Laravel 3.2.1
-- Pest 4.7.5 with Pest Laravel plugin 4.1.0
+- Vue 3.5.40, Inertia Vue 3.6.1, and Vite 8.2.0
+- Pest 4.7.5
 - Nginx 1.27
 - PostgreSQL 17
 - Node.js 22 (containerized build tooling)
 
 Exact Composer and npm dependency versions are locked in `composer.lock` and `package-lock.json`.
 
-## Bootstrap commands
+## Prerequisites
 
-The initial skeleton was generated in the project Composer container:
+The host needs only:
+
+- Docker Engine with the Docker Compose v2 plugin (`docker compose`)
+- GNU Make
+- `curl` for the optional HTTP health checks
+- the pre-existing external Docker network `cloudflare_tunnel`
+
+PHP, Composer, Node.js, and PostgreSQL are not installed or run on the host. They run in the project's Compose services and isolated Docker volumes.
+
+Felio owns the bridge network `felio_felio_net` and the volumes `felio_postgres_data`, `felio_vendor`, and `felio_node_modules`. Compose attaches only the `web` service to the pre-existing `cloudflare_tunnel` network; it does not create or remove that network.
+
+## Local development
+
+Felio publishes its web service on host port **8086**. This port is recorded in `docker-compose.yml`, `Makefile`, and this document. Before starting the project, confirm that the port is free:
 
 ```sh
-docker compose run --rm composer composer create-project --prefer-dist laravel/laravel /var/www/html '^13.0'
+docker ps --format '{{.Ports}}' | grep -oP '\d+(?=->)' | sort -n
 ```
 
-The frontend and testing dependencies are installed with:
-
-```sh
-docker compose run --rm composer composer require inertiajs/inertia-laravel
-docker compose run --rm composer composer require --dev pestphp/pest:^4.7.5 pestphp/pest-plugin-laravel --with-all-dependencies
-docker compose run --rm composer composer config platform.php 8.3.0
-docker compose run --rm composer composer update --with-all-dependencies
-docker compose run --rm node npm install vue @vitejs/plugin-vue @inertiajs/vue3
-```
-
-## Run the application
-
-The project uses its own Docker Compose network, `felio_felio_net`. The web service is exposed on host port **8086**.
-
-The `cloudflare_tunnel` network is pre-existing and external. Docker Compose only attaches the `web` service to it; it must already exist and Compose must not create or remove it.
+### Start the stack
 
 ```sh
 make build
 make up
+make ps
 curl -i http://localhost:8086/
 curl -i http://localhost:8086/health
 ```
 
-Both `/` and `/health` return HTTP 200. `/health` is a minimal liveness endpoint.
+The `/` and `/health` endpoints return HTTP 200 when the web and application services are healthy.
 
-## Commands
+### Apply migrations
+
+After the database is running, apply pending Laravel migrations:
 
 ```sh
-make up       # start app and web services
-make down     # stop services
-make restart  # restart services
-make logs     # follow service logs
-make build    # rebuild application image
-make ps       # show service status
-make test     # run the Pest suite
-make frontend # build Vue assets with Vite
-make migrate  # apply Laravel migrations to PostgreSQL
-make smoke-migrations # reset and verify the baseline PostgreSQL migrations
+make migrate
 ```
 
-All dependencies run in containers; PHP, Composer, Node.js, and PostgreSQL are not required on the host. PostgreSQL data, Composer dependencies, and Node modules use the isolated `felio_postgres_data`, `felio_vendor`, and `felio_node_modules` Docker volumes.
-
-## PostgreSQL migrations
-
-The application defaults to the `pgsql` connection specified in `.env.example` and Docker Compose. A normal startup can apply pending framework migrations with `make migrate`.
-
-To prove the clean baseline against PostgreSQL, run:
+For a disposable local database, this destructive smoke check recreates the migration schema and prints the migration status:
 
 ```sh
 make smoke-migrations
 ```
 
-This command starts the database, recreates the migration schema using `migrate:fresh`, and prints Laravel's migration status. It is destructive: use it only for a disposable local database. The baseline contains only Laravel framework tables; portfolio-domain tables are intentionally deferred.
+### Run tests
+
+```sh
+make test
+```
+
+This executes the Pest suite in the `app` Compose service. Build Vue assets when needed with `make frontend`.
+
+### Operate and stop the stack
+
+```sh
+make restart  # restart running services
+make logs     # follow service logs (Ctrl-C stops log following)
+make down     # stop and remove Felio services and its default network
+```
+
+`make down` intentionally preserves the named Docker volumes. Remove them explicitly only when a local reset is required.
+
+## Make targets
+
+```text
+make up               Start the Compose services in the background.
+make down             Stop and remove the Compose services.
+make restart          Restart the running Compose services.
+make logs             Follow Compose service logs.
+make build            Rebuild Compose images.
+make ps               Show Compose service status.
+make test             Run the Pest suite in the app container.
+make frontend         Install locked npm dependencies and build Vite assets.
+make migrate          Apply pending Laravel migrations.
+make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.
+```
+
+All targets invoke `docker compose` through the `COMPOSE` Make variable. Set it only when an alternative compatible Compose command is necessary, for example `make ps COMPOSE='docker compose --ansi never'`.
+
+## Fork workflow
+
+The development profile works only in the fork. Configure the remotes as follows:
+
+```text
+origin   https://github.com/ddrabik-bot/felio.git  (development fork; fetch and push)
+upstream https://github.com/DanielDrabik/felio.git (Daniel's source repository; read-only)
+```
+
+`master` is the stable base branch in the fork. `dev` is the integration branch in the fork. Every task branch is created from the latest `origin/dev` using the `feat/<short-task-name>` convention (or the project's equivalent convention), and is pushed only to `origin`.
+
+```sh
+git fetch origin
+git checkout dev
+git pull --ff-only origin dev
+git checkout -b feat/<short-task-name>
+```
+
+Never push to `upstream`, create branches there, or merge there. After all work in an approved stage has been verified and integrated into the fork's `dev` branch, the project opens one aggregate pull request from `ddrabik-bot:dev` to `DanielDrabik:master`. Individual task branches do not receive pull requests to the source repository.

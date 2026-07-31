@@ -1,36 +1,38 @@
-.PHONY: up down restart logs build ps test frontend migrate smoke-migrations
-
+COMPOSE ?= docker compose
+# Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
+.PHONY: up down restart logs build ps test frontend migrate smoke-migrations
+
 up:
-	docker compose up -d
+	$(COMPOSE) up -d
 
 down:
-	docker compose down
+	$(COMPOSE) down
 
 restart:
-	docker compose restart
+	$(COMPOSE) restart
 
 logs:
-	docker compose logs -f
+	$(COMPOSE) logs -f
 
 build:
-	docker compose build
+	$(COMPOSE) build
 
 ps:
-	docker compose ps
+	$(COMPOSE) ps
 
 test:
-	docker compose run --rm app php artisan test
+	$(COMPOSE) run --rm app php artisan test
 
 frontend:
-	docker compose run --rm node npm ci
-	docker compose run --rm node npm run build
+	$(COMPOSE) run --rm node npm ci
+	$(COMPOSE) run --rm node npm run build
 
 migrate:
-	docker compose run --rm app php artisan migrate
+	$(COMPOSE) run --rm app php artisan migrate
 
 smoke-migrations:
-	docker compose up -d db
-	docker compose run --rm app php artisan migrate:fresh --force
-	docker compose run --rm app php artisan migrate:status
+	$(COMPOSE) up -d db
+	$(COMPOSE) run --rm app php artisan migrate:fresh --force
+	$(COMPOSE) run --rm app php artisan migrate:status
