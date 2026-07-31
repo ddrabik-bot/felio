@@ -2,7 +2,7 @@ COMPOSE ?= docker compose
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test frontend migrate smoke-migrations
+.PHONY: up down restart logs build ps test frontend migrate smoke-migrations spike-yfinance
 
 up:
 	$(COMPOSE) up -d
@@ -36,3 +36,24 @@ smoke-migrations:
 	$(COMPOSE) up -d db
 	$(COMPOSE) run --rm app php artisan migrate:fresh --force
 	$(COMPOSE) run --rm app php artisan migrate:status
+
+spike-yfinance:
+	@set -eu; \
+	tmp_results="$$(mktemp -d)"; \
+	container_name="felio-yfinance-spike-probe-$$$$"; \
+	cleanup() { \
+		original_status="$$?"; cleanup_status=0; \
+		docker rm -f "$$container_name" >/dev/null || cleanup_status="$$?"; \
+		rm -rf "$$tmp_results" || cleanup_status="$$?"; \
+		trap - EXIT; \
+		if [ "$$original_status" -ne 0 ]; then exit "$$original_status"; fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap cleanup EXIT; \
+	$(COMPOSE) run --no-deps --name "$$container_name" yfinance-spike; \
+	docker cp "$$container_name:/workspace/spikes/yfinance-provider/results/xtb-sample.json" "$$tmp_results/xtb-sample.json"; \
+	docker cp "$$container_name:/workspace/spikes/yfinance-provider/results/xtb-sample.md" "$$tmp_results/xtb-sample.md"; \
+	test -s "$$tmp_results/xtb-sample.json"; \
+	test -s "$$tmp_results/xtb-sample.md"; \
+	mv "$$tmp_results/xtb-sample.json" spikes/yfinance-provider/results/xtb-sample.json; \
+	mv "$$tmp_results/xtb-sample.md" spikes/yfinance-provider/results/xtb-sample.md

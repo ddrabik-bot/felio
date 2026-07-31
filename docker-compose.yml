@@ -55,6 +55,16 @@ services:
     networks:
       - felio_net
 
+  yfinance-spike:
+    build:
+      context: ./spikes/yfinance-provider
+      dockerfile: Dockerfile
+    working_dir: /workspace/spikes/yfinance-provider
+    profiles:
+      - spike
+    networks:
+      - felio_net
+
   db:
     image: postgres:17-alpine
     environment:

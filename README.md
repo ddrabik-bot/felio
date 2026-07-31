@@ -92,9 +92,26 @@ make test             Run the Pest suite in the app container.
 make frontend         Install locked npm dependencies and build Vite assets.
 make migrate          Apply pending Laravel migrations.
 make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.
+make spike-yfinance    Run the isolated, live yfinance feasibility probe.
 ```
 
 All targets invoke `docker compose` through the `COMPOSE` Make variable. Set it only when an alternative compatible Compose command is necessary, for example `make ps COMPOSE='docker compose --ansi never'`.
+
+## yfinance feasibility spike
+
+`spikes/yfinance-provider/` is a disposable, non-production experiment for the
+initial provider decision. It probes the sample XTB instruments individually,
+so a Yahoo Finance failure for one symbol never prevents the other probes.
+
+```sh
+make spike-yfinance
+```
+
+The command builds a dedicated Python container, copies its ignored,
+point-in-time JSON result plus Markdown table to
+`spikes/yfinance-provider/results/`, and removes the one-off container. Read
+`spikes/yfinance-provider/README.md` for the mapping recommendation and the
+provider limitations discovered by the spike.
 
 ## Fork workflow
 
