@@ -60,6 +60,19 @@ make ps       # show service status
 make test     # run the Pest suite
 make frontend # build Vue assets with Vite
 make migrate  # apply Laravel migrations to PostgreSQL
+make smoke-migrations # reset and verify the baseline PostgreSQL migrations
 ```
 
 All dependencies run in containers; PHP, Composer, Node.js, and PostgreSQL are not required on the host. PostgreSQL data, Composer dependencies, and Node modules use the isolated `felio_postgres_data`, `felio_vendor`, and `felio_node_modules` Docker volumes.
+
+## PostgreSQL migrations
+
+The application defaults to the `pgsql` connection specified in `.env.example` and Docker Compose. A normal startup can apply pending framework migrations with `make migrate`.
+
+To prove the clean baseline against PostgreSQL, run:
+
+```sh
+make smoke-migrations
+```
+
+This command starts the database, recreates the migration schema using `migrate:fresh`, and prints Laravel's migration status. It is destructive: use it only for a disposable local database. The baseline contains only Laravel framework tables; portfolio-domain tables are intentionally deferred.
