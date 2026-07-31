@@ -1,4 +1,4 @@
-.PHONY: up down restart logs build ps test frontend migrate
+.PHONY: up down restart logs build ps test frontend migrate smoke-migrations
 
 HTTP_PORT := 8086
 
@@ -29,3 +29,8 @@ frontend:
 
 migrate:
 	docker compose run --rm app php artisan migrate
+
+smoke-migrations:
+	docker compose up -d db
+	docker compose run --rm app php artisan migrate:fresh --force
+	docker compose run --rm app php artisan migrate:status
