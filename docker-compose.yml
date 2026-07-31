@@ -1,21 +1,36 @@
+name: felio
+
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile
     working_dir: /var/www/html
-    volumes:
-      - ./:/var/www/html
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_KEY: base64:Uu9pib5bVJrdUQJZ8OMO7pPqL3HP/3l4FiZNsWkubHY=
+      APP_URL: http://localhost:8087
+      SESSION_DRIVER: file
+      CACHE_STORE: file
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: felio
+      DB_USERNAME: felio
+      DB_PASSWORD: felio
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - felio_net
 
   web:
-    image: nginx:1.27-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
     ports:
-      - "8086:80"
-    volumes:
-      - ./:/var/www/html:ro
-      - ./.docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - "8087:80"
     depends_on:
       - app
     networks:
@@ -26,6 +41,7 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./:/var/www/html
+      - vendor:/var/www/html/vendor
     networks:
       - felio_net
 
@@ -34,8 +50,33 @@ services:
     working_dir: /var/www/html
     volumes:
       - ./:/var/www/html
+      - node_modules:/var/www/html/node_modules
     networks:
       - felio_net
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: felio
+      POSTGRES_USER: felio
+      POSTGRES_PASSWORD: felio
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U felio -d felio"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - felio_net
+
+volumes:
+  node_modules:
+    name: felio_node_modules
+  postgres_data:
+    name: felio_postgres_data
+  vendor:
+    name: felio_vendor
 
 networks:
   felio_net:

@@ -1,4 +1,6 @@
-.PHONY: up down restart logs build ps test frontend
+.PHONY: up down restart logs build ps test frontend migrate
+
+HTTP_PORT := 8087
 
 up:
 	docker compose up -d
@@ -22,4 +24,8 @@ test:
 	docker compose run --rm app php artisan test
 
 frontend:
+	docker compose run --rm node npm ci
 	docker compose run --rm node npm run build
+
+migrate:
+	docker compose run --rm app php artisan migrate
