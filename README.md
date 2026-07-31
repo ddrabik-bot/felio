@@ -35,13 +35,15 @@ docker compose run --rm node npm install vue @vitejs/plugin-vue @inertiajs/vue3
 
 ## Run the application
 
-The project uses its own Docker Compose network, `felio_felio_net`. The web service is exposed on host port **8087**. This task selected 8087 after inspecting the active Docker host ports; it was free in the preferred 8081–8099 range.
+The project uses its own Docker Compose network, `felio_felio_net`. The web service is exposed on host port **8086**.
+
+The `cloudflare_tunnel` network is pre-existing and external. Docker Compose only attaches the `web` service to it; it must already exist and Compose must not create or remove it.
 
 ```sh
 make build
 make up
-curl -i http://localhost:8087/
-curl -i http://localhost:8087/health
+curl -i http://localhost:8086/
+curl -i http://localhost:8086/health
 ```
 
 Both `/` and `/health` return HTTP 200. `/health` is a minimal liveness endpoint.

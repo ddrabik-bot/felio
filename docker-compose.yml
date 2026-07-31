@@ -10,7 +10,7 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       APP_KEY: base64:Uu9pib5bVJrdUQJZ8OMO7pPqL3HP/3l4FiZNsWkubHY=
-      APP_URL: http://localhost:8087
+      APP_URL: http://localhost:8086
       SESSION_DRIVER: file
       CACHE_STORE: file
       DB_CONNECTION: pgsql
@@ -30,11 +30,12 @@ services:
       context: .
       dockerfile: Dockerfile.nginx
     ports:
-      - "8087:80"
+      - "8086:80"
     depends_on:
       - app
     networks:
       - felio_net
+      - cloudflare_tunnel
 
   composer:
     image: composer:2
@@ -82,3 +83,6 @@ networks:
   felio_net:
     name: felio_felio_net
     driver: bridge
+  cloudflare_tunnel:
+    external: true
+    name: cloudflare_tunnel

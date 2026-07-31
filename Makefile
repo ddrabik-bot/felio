@@ -1,6 +1,6 @@
 .PHONY: up down restart logs build ps test frontend migrate
 
-HTTP_PORT := 8087
+HTTP_PORT := 8086
 
 up:
 	docker compose up -d
