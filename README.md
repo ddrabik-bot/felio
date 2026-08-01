@@ -87,6 +87,36 @@ other results. The gateway is deliberately a separate boundary: deterministic
 Pest tests use fakes, while the time-dependent live yfinance evidence remains
 an explicit `make spike-yfinance` command.
 
+## NBP Table-A FX adapter
+
+`NbpTableAFxProvider` is the production-facing contract and adapter for NBP
+Table-A PLN mid rates. `historical()` always uses the exact same start/end date
+route and accepts a rate only when its `effectiveDate` equals the requested
+Warsaw calendar date. A weekend, Polish banking holiday, or publication-delay
+`404` is an explicit `Unavailable` result; the adapter never queries or
+substitutes a previous business day.
+
+`current()` is diagnostic only: it can return `Stale` when NBP's latest rate is
+older than the supplied `Europe/Warsaw` as-of date, and such a result is not an
+accepted EOD rate. Both calls return typed per-currency results that preserve
+the source `mid` as a decimal string and retain retrieval time, requested API
+endpoint, table number, effective date, source timezone, upstream contract,
+and Felio implementation version. Transient network and selected HTTP failures
+are retried within the explicit `NbpFxRetryPolicy` bound. `historicalMany()`
+processes every currency independently, without a fallback provider or a
+silent date substitution.
+
+`NbpFxGateway` is the testable HTTP boundary; `LaravelNbpFxGateway` is its
+Laravel HTTP-client implementation. Deterministic provider tests use gateway
+fakes and can be run with:
+
+```sh
+make test-fx
+```
+
+This adapter performs no FX persistence, portfolio valuation, XTB import,
+dashboard, scheduler, or fallback work.
+
 ## EOD market-data persistence
 
 `MarketDataPersistenceService` persists only available `InstrumentMarketData`
@@ -129,7 +159,8 @@ make restart          Restart the running Compose services.
 make logs             Follow Compose service logs.
 make build            Rebuild Compose images.
 make ps               Show Compose service status.
-make test             Run the Pest suite in the app container.
+make test               Run the Pest suite in the app container.
+make test-fx            Run deterministic NBP Table-A FX adapter tests.
 make test-market-data-persistence Run focused EOD persistence tests on PostgreSQL.
 make frontend         Install locked npm dependencies and build Vite assets.
 make migrate          Apply pending Laravel migrations.
