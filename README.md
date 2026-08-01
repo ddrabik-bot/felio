@@ -69,6 +69,24 @@ make test
 
 This executes the Pest suite in the `app` Compose service. Build Vue assets when needed with `make frontend`.
 
+## Yahoo Finance market-data adapter
+
+`YahooFinanceMarketDataProvider` is the first concrete implementation of the
+`MarketDataProvider` contract. It receives an explicit
+`ProviderInstrumentMapping`, calls only its injected `YahooFinanceGateway` with
+the resolved provider symbol, and returns one `InstrumentMarketData` result per
+instrument. Its payload preserves unadjusted daily OHLC, provider-reported
+exchange and quote currency, dividends, and splits. No valuation, FX conversion,
+XTB import, persistence, or provider fallback is performed here.
+
+The adapter treats gateway transport and rate-limit failures as retryable under
+`MarketDataRetryPolicy`; it classifies empty history as typed `NoData` and
+malformed/provider failures as `Unavailable`. `fetchMany()` processes every
+mapping independently, so a failure for one resolved symbol does not discard
+other results. The gateway is deliberately a separate boundary: deterministic
+Pest tests use fakes, while the time-dependent live yfinance evidence remains
+an explicit `make spike-yfinance` command.
+
 ### Operate and stop the stack
 
 ```sh

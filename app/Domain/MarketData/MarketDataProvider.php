@@ -5,4 +5,6 @@ namespace App\Domain\MarketData;
 interface MarketDataProvider
 {
     public function availability(ProviderInstrumentMapping $mapping): InstrumentAvailability;
+
+    public function fetch(ProviderInstrumentMapping $mapping): InstrumentMarketData;
 }

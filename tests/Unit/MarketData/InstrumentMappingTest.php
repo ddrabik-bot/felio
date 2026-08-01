@@ -3,6 +3,7 @@
 use App\Domain\MarketData\AvailabilityStatus;
 use App\Domain\MarketData\CanonicalInstrument;
 use App\Domain\MarketData\InstrumentAvailability;
+use App\Domain\MarketData\InstrumentMarketData;
 use App\Domain\MarketData\MarketDataError;
 use App\Domain\MarketData\MarketDataErrorCategory;
 use App\Domain\MarketData\MarketDataProvider;
@@ -58,6 +59,11 @@ it('returns a typed availability result for one mapped instrument', function ():
         public function availability(ProviderInstrumentMapping $mapping): InstrumentAvailability
         {
             return InstrumentAvailability::available($mapping);
+        }
+
+        public function fetch(ProviderInstrumentMapping $mapping): InstrumentMarketData
+        {
+            throw new LogicException('This availability-only fake must not fetch market data.');
         }
     };
 
