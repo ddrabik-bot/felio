@@ -6,8 +6,8 @@ final readonly class MarketDataSnapshot
 {
     /**
      * @param  list<DailyOhlc>  $dailyOhlc
-     * @param  list<array{date: string, amount: string}>  $dividends
-     * @param  list<array{date: string, ratio: string}>  $splits
+     * @param  list<array{date: string, amount: string, provider_event_id?: string}>  $dividends
+     * @param  list<array{date: string, ratio: string, provider_event_id?: string}>  $splits
      */
     public function __construct(
         public string $exchange,
@@ -15,5 +15,8 @@ final readonly class MarketDataSnapshot
         public array $dailyOhlc,
         public array $dividends,
         public array $splits,
+        public string $retrievedAt,
+        public string $sourceTimezone,
+        public string $providerVersion,
     ) {}
 }

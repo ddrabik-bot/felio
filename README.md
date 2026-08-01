@@ -87,6 +87,29 @@ other results. The gateway is deliberately a separate boundary: deterministic
 Pest tests use fakes, while the time-dependent live yfinance evidence remains
 an explicit `make spike-yfinance` command.
 
+## EOD market-data persistence
+
+`MarketDataPersistenceService` persists only available `InstrumentMarketData`
+results into PostgreSQL. An EOD snapshot is unique by canonical instrument,
+provider, provider symbol, and session date. Daily OHLC rows are unique within
+the snapshot by trading date. Both identities are written using PostgreSQL
+native `INSERT ... ON CONFLICT` upserts, making provider retries idempotent.
+
+Corporate-action values and OHLC values are stored as exact source strings, not
+PHP floats. Each action has a SHA-256 identity derived from its type, source
+date, raw value, and a provider event ID (or stable source-array position when
+the provider has none), so even otherwise identical raw same-day events remain
+distinct. Snapshot records retain the explicit retrieval timestamp, source
+timezone, and provider version supplied by the adapter. Unavailable and no-data
+instruments create no snapshot, OHLC, or action records. This boundary performs
+no valuation, FX, XTB import, dashboard, scheduler, or provider fallback work.
+
+Run the focused persistence checks against the Compose PostgreSQL service with:
+
+```sh
+make test-market-data-persistence
+```
+
 ### Operate and stop the stack
 
 ```sh
@@ -107,6 +130,7 @@ make logs             Follow Compose service logs.
 make build            Rebuild Compose images.
 make ps               Show Compose service status.
 make test             Run the Pest suite in the app container.
+make test-market-data-persistence Run focused EOD persistence tests on PostgreSQL.
 make frontend         Install locked npm dependencies and build Vite assets.
 make migrate          Apply pending Laravel migrations.
 make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.

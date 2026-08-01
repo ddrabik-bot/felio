@@ -28,6 +28,9 @@ function yahooPayload(): YahooFinancePayload
         dailyOhlc: [new DailyOhlc('2026-07-31', '1.10', '1.20', '1.00', '1.15')],
         dividends: [['date' => '2026-01-15', 'amount' => '0.25']],
         splits: [['date' => '2025-03-01', 'ratio' => '2']],
+        retrievedAt: '2026-08-01T21:15:00+00:00',
+        sourceTimezone: 'America/New_York',
+        providerVersion: 'chart-v8',
     );
 }
 
@@ -54,7 +57,10 @@ it('fetches unadjusted daily OHLC, provider metadata, and corporate actions usin
         ->and($result->snapshot->dailyOhlc[0]->open)->toBe('1.10')
         ->and($result->snapshot->dailyOhlc[0]->close)->toBe('1.15')
         ->and($result->snapshot->dividends)->toBe([['date' => '2026-01-15', 'amount' => '0.25']])
-        ->and($result->snapshot->splits)->toBe([['date' => '2025-03-01', 'ratio' => '2']]);
+        ->and($result->snapshot->splits)->toBe([['date' => '2025-03-01', 'ratio' => '2']])
+        ->and($result->snapshot->retrievedAt)->toBe('2026-08-01T21:15:00+00:00')
+        ->and($result->snapshot->sourceTimezone)->toBe('America/New_York')
+        ->and($result->snapshot->providerVersion)->toBe('chart-v8');
 });
 
 it('retries a transport failure only within the configured bound', function (): void {

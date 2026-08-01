@@ -36,6 +36,9 @@ final readonly class YahooFinanceMarketDataProvider implements MarketDataProvide
                     $payload->dailyOhlc,
                     $payload->dividends,
                     $payload->splits,
+                    $payload->retrievedAt,
+                    $payload->sourceTimezone,
+                    $payload->providerVersion,
                 ));
             } catch (YahooFinanceGatewayException $exception) {
                 $error = $this->classify($exception);
