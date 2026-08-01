@@ -150,6 +150,22 @@ it('preserves the NBP decimal string and response metadata exactly', function ()
         ->and($result->effectiveDate?->format('Y-m-d'))->toBe('2026-07-31');
 });
 
+it('rejects a numeric NBP mid value before PHP can lose its decimal precision', function (): void {
+    $gateway = new class implements NbpFxGateway
+    {
+        public function get(string $url): NbpFxHttpResponse
+        {
+            return new NbpFxHttpResponse(200, '{"table":"A","currency":"test currency","code":"EUR","rates":[{"no":"147/A/NBP/2026","effectiveDate":"2026-07-31","mid":4.3128}]}');
+        }
+    };
+
+    $result = nbpProvider($gateway)->historical('EUR', new DateTimeImmutable('2026-07-31'));
+
+    expect($result->availability)->toBe(FxRateAvailability::Unavailable)
+        ->and($result->plnPerUnit)->toBeNull()
+        ->and($result->reason)->toBe('invalid_rate_fields');
+});
+
 it('isolates each currency so a failed USD request does not block EUR', function (): void {
     $gateway = new class implements NbpFxGateway
     {
