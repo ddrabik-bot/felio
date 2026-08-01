@@ -135,6 +135,8 @@ make frontend         Install locked npm dependencies and build Vite assets.
 make migrate          Apply pending Laravel migrations.
 make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.
 make spike-yfinance    Run the isolated, live yfinance feasibility probe.
+make test-nbp-fx-spike Run deterministic NBP FX probe tests in the spike container.
+make spike-nbp-fx      Run the isolated, live NBP USD/EUR Table-A FX probe.
 ```
 
 All targets invoke `docker compose` through the `COMPOSE` Make variable. Set it only when an alternative compatible Compose command is necessary, for example `make ps COMPOSE='docker compose --ansi never'`.
@@ -154,6 +156,23 @@ point-in-time JSON result plus Markdown table to
 `spikes/yfinance-provider/results/`, and removes the one-off container. Read
 `spikes/yfinance-provider/README.md` for the mapping recommendation and the
 provider limitations discovered by the spike.
+
+## NBP FX feasibility spike
+
+`spikes/nbp-fx-provider/` is an isolated, non-production probe of NBP Table-A
+PLN mid rates for USD and EUR. It issues exact-date historical requests,
+separately records missing dates and stale current responses, and preserves
+rates as decimal strings. It does not perform valuation, persistence, imports,
+or fallback.
+
+```sh
+make test-nbp-fx-spike
+make spike-nbp-fx
+```
+
+The live probe output is ignored because it is time-dependent. Read
+`spikes/nbp-fx-provider/README.md` for the exact-date policy, retry/error
+classification, publication-delay constraints, required metadata, and verdict.
 
 ## Fork workflow
 

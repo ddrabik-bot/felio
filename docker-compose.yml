@@ -65,6 +65,16 @@ services:
     networks:
       - felio_net
 
+  nbp-fx-spike:
+    build:
+      context: ./spikes/nbp-fx-provider
+      dockerfile: Dockerfile
+    working_dir: /workspace/spikes/nbp-fx-provider
+    profiles:
+      - spike
+    networks:
+      - felio_net
+
   db:
     image: postgres:17-alpine
     environment:

@@ -1,0 +1,4 @@
+results/*.json
+results/*.md
+!results/.gitkeep
+__pycache__/

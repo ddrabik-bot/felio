@@ -2,7 +2,7 @@ COMPOSE ?= docker compose
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test test-market-data-persistence frontend migrate smoke-migrations spike-yfinance
+.PHONY: up down restart logs build ps test test-market-data-persistence frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
 
 up:
 	$(COMPOSE) up -d
@@ -60,3 +60,27 @@ spike-yfinance:
 	test -s "$$tmp_results/xtb-sample.md"; \
 	mv "$$tmp_results/xtb-sample.json" spikes/yfinance-provider/results/xtb-sample.json; \
 	mv "$$tmp_results/xtb-sample.md" spikes/yfinance-provider/results/xtb-sample.md
+
+spike-nbp-fx:
+	@set -eu; \
+	tmp_results="$$(mktemp -d)"; \
+	container_name="felio-nbp-fx-spike-probe-$$$$"; \
+	cleanup() { \
+		original_status="$$?"; cleanup_status=0; \
+		docker rm -f "$$container_name" >/dev/null || cleanup_status="$$?"; \
+		rm -rf "$$tmp_results" || cleanup_status="$$?"; \
+		trap - EXIT; \
+		if [ "$$original_status" -ne 0 ]; then exit "$$original_status"; fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap cleanup EXIT; \
+	$(COMPOSE) run --no-deps --name "$$container_name" nbp-fx-spike; \
+	docker cp "$$container_name:/workspace/spikes/nbp-fx-provider/results/nbp-fx.json" "$$tmp_results/nbp-fx.json"; \
+	docker cp "$$container_name:/workspace/spikes/nbp-fx-provider/results/nbp-fx.md" "$$tmp_results/nbp-fx.md"; \
+	test -s "$$tmp_results/nbp-fx.json"; \
+	test -s "$$tmp_results/nbp-fx.md"; \
+	mv "$$tmp_results/nbp-fx.json" spikes/nbp-fx-provider/results/nbp-fx.json; \
+	mv "$$tmp_results/nbp-fx.md" spikes/nbp-fx-provider/results/nbp-fx.md
+
+test-nbp-fx-spike:
+	$(COMPOSE) run --rm --no-deps --entrypoint python nbp-fx-spike test_probe.py
