@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -31,6 +32,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('market_data_snapshot_id')->constrained()->cascadeOnDelete();
             $table->date('trading_date');
+            // PostgreSQL columns are converted to unconstrained NUMERIC below.
+            // SQLite keeps TEXT in tests so its driver does not coerce exact input.
             $table->text('open');
             $table->text('high');
             $table->text('low');
@@ -45,12 +48,25 @@ return new class extends Migration
             $table->foreignId('market_data_snapshot_id')->constrained()->cascadeOnDelete();
             $table->string('action_type');
             $table->date('action_date');
+            // PostgreSQL converts this to unconstrained NUMERIC below.
             $table->text('value');
             $table->char('event_identity', 64);
             $table->timestamps();
 
             $table->unique(['market_data_snapshot_id', 'event_identity'], 'corporate_actions_identity_unique');
         });
+
+        if (DB::getDriverName() === 'pgsql') {
+            foreach ([
+                ['daily_ohlc_observations', 'open'],
+                ['daily_ohlc_observations', 'high'],
+                ['daily_ohlc_observations', 'low'],
+                ['daily_ohlc_observations', 'close'],
+                ['corporate_actions', 'value'],
+            ] as [$table, $column]) {
+                DB::statement("ALTER TABLE {$table} ALTER COLUMN {$column} TYPE NUMERIC USING {$column}::NUMERIC");
+            }
+        }
     }
 
     public function down(): void
