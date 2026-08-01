@@ -159,3 +159,14 @@ it('does not persist prices or actions for unavailable instruments', function ()
         ->and(DB::table('daily_ohlc_observations')->count())->toBe(0)
         ->and(DB::table('corporate_actions')->count())->toBe(0);
 });
+
+it('does not persist prices or actions for no-data instruments', function (): void {
+    app(MarketDataPersistenceService::class)->persist(InstrumentMarketData::noData(
+        persistenceMapping(),
+        MarketDataError::from(MarketDataErrorCategory::InstrumentNotFound, 'empty history'),
+    ), '2026-08-01');
+
+    expect(DB::table('market_data_snapshots')->count())->toBe(0)
+        ->and(DB::table('daily_ohlc_observations')->count())->toBe(0)
+        ->and(DB::table('corporate_actions')->count())->toBe(0);
+});
