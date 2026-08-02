@@ -117,6 +117,29 @@ make test-fx
 This adapter performs no FX persistence, portfolio valuation, XTB import,
 dashboard, scheduler, or fallback work.
 
+## FX rate snapshots persistence
+
+`FxRatePersistenceService` persists every `FxRateResult` returned by an FX
+provider, including `available`, `stale`, and `unavailable` results. It stores
+currency, requested and effective Warsaw dates, exact PLN-per-unit source
+strings as PostgreSQL `NUMERIC`, availability, reason, attempts, retrieval
+time, provider implementation version, endpoint, table, source timezone, and
+JSON provider-response metadata (`table_number` and API contract). It never
+manufactures a rate or substitutes a prior business day.
+
+The database-native `INSERT ... ON CONFLICT` identity is provider implementation
+version + currency + requested date + a SHA-256 source-observation identity. The
+source-observation identity includes effective date (or its explicit absence),
+availability, endpoint, table, source timezone, and provider-response metadata.
+Thus retrying the same source observation is idempotent, while a distinct
+effective-date or source observation remains separately observable.
+
+Run the focused PostgreSQL persistence checks with:
+
+```sh
+make test-fx-persistence
+```
+
 ## EOD market-data persistence
 
 `MarketDataPersistenceService` persists only available `InstrumentMarketData`
@@ -161,6 +184,7 @@ make build            Rebuild Compose images.
 make ps               Show Compose service status.
 make test               Run the Pest suite in the app container.
 make test-fx            Run deterministic NBP Table-A FX adapter tests.
+make test-fx-persistence Run focused FX snapshot persistence tests on PostgreSQL.
 make test-market-data-persistence Run focused EOD persistence tests on PostgreSQL.
 make frontend         Install locked npm dependencies and build Vite assets.
 make migrate          Apply pending Laravel migrations.
