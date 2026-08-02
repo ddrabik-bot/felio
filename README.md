@@ -117,6 +117,34 @@ make test-fx
 This adapter performs no FX persistence, portfolio valuation, XTB import,
 dashboard, scheduler, or fallback work.
 
+## Valuation foundation
+
+`App\Domain\Valuation\ValuationService` is a pure in-memory domain service. Its
+`ValuationInput`, `PriceQuote`, and `ValuationResult` value objects retain every
+source number as a decimal string and use PHP BCMath only; PHP floats are not
+used. Quantity, price, and supplied non-null PLN-per-unit FX values must be
+strictly positive decimal strings. USD, EUR, and other foreign-currency prices
+require a matching `FxRateResult`; a stale rate is accepted only under the explicit
+stale-rate policy. PLN prices require no FX result.
+
+The service preserves the full decimal scale produced by quantity × price ×
+PLN-per-unit and performs one `ROUND_HALF_UP` equivalent only at the final PLN
+grosz boundary. It returns `available`, `stale`, or `unavailable`, never inventing a
+PLN amount if the price or required FX rate is unavailable or missing. Default
+`StaleFxRatePolicy::Reject` turns a stale FX rate into an unavailable valuation;
+`StaleFxRatePolicy::Accept` permits the value but returns it as `stale`. Both
+paths carry explicit diagnostics, including the provider's stale/unavailable
+reason. A stale price is similarly retained as `stale` when its FX requirement
+is satisfied.
+
+This foundation does not persist valuations, aggregate portfolios, import XTB,
+run a scheduler, render a dashboard, or use a provider fallback. Run its
+deterministic coverage with:
+
+```sh
+make test-valuation
+```
+
 ## FX rate snapshots persistence
 
 `FxRatePersistenceService` persists every `FxRateResult` returned by an FX
@@ -184,6 +212,7 @@ make build            Rebuild Compose images.
 make ps               Show Compose service status.
 make test               Run the Pest suite in the app container.
 make test-fx            Run deterministic NBP Table-A FX adapter tests.
+make test-valuation     Run deterministic valuation arithmetic and availability tests.
 make test-fx-persistence Run focused FX snapshot persistence tests on PostgreSQL.
 make test-market-data-persistence Run focused EOD persistence tests on PostgreSQL.
 make frontend         Install locked npm dependencies and build Vite assets.
