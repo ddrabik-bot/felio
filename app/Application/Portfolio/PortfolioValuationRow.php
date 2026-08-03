@@ -2,6 +2,8 @@
 
 namespace App\Application\Portfolio;
 
+use App\Domain\Fx\FxRateResult;
+use App\Domain\Valuation\PriceQuote;
 use App\Domain\Valuation\ValuationAvailability;
 
 final readonly class PortfolioValuationRow
@@ -12,6 +14,8 @@ final readonly class PortfolioValuationRow
         public int $accountId,
         public string $instrument,
         public string $quantity,
+        public PriceQuote $sourcePrice,
+        public ?FxRateResult $fxRate,
         public ValuationAvailability $availability,
         public ?int $plnGrosze,
         public array $diagnostics,

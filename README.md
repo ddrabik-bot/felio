@@ -228,8 +228,18 @@ Run its focused PostgreSQL coverage with:
 make test-portfolio-valuation
 ```
 
-No XLSX parsing, market valuation, FX conversion, dashboard, scheduler, or
-background importing is implemented by this boundary.
+No XLSX parsing, market valuation, FX conversion, scheduler, or background importing is implemented by this boundary.
+
+## Portfolio valuation dashboard
+
+`GET /portfolio/valuation?date=YYYY-MM-DD` is an authorization-free local Inertia dashboard over the existing portfolio valuation read model. The `date` query parameter is required and is the exact valuation date; it never defaults to the current date. The backend supplies the integer PLN-grosze total, deterministic position rows, source price metadata, FX status, valuation availability, and all diagnostics. The Vue page only renders these values; it does not calculate money, select source data, or omit unavailable positions.
+
+The page renders accessible loading, empty, error, and tabular ready states. It displays unavailable price/value cells and stale or unavailable FX diagnostics explicitly. Build the client assets through the app image and run the focused route/view-model coverage with:
+
+```sh
+make frontend
+make test-portfolio-dashboard
+```
 
 ### Operate and stop the stack
 
@@ -256,7 +266,9 @@ make test-valuation     Run deterministic valuation arithmetic and availability 
 make test-fx-persistence Run focused FX snapshot persistence tests on PostgreSQL.
 make test-market-data-persistence Run focused EOD persistence tests on PostgreSQL.
 make test-portfolio-persistence Run focused portfolio import and position checks on PostgreSQL.
-make frontend         Install locked npm dependencies and build Vite assets.
+make test-portfolio-valuation Run focused historical portfolio valuation read-model checks on PostgreSQL.
+make test-portfolio-dashboard Run focused Inertia dashboard route/view-model checks on PostgreSQL.
+make frontend         Build the Vite frontend in the application image.
 make migrate          Apply pending Laravel migrations.
 make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.
 make spike-yfinance    Run the isolated, live yfinance feasibility probe.

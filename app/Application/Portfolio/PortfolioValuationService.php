@@ -27,7 +27,7 @@ final readonly class PortfolioValuationService
             $result = $this->valuationService->value(new ValuationInput($position->quantity, $price, $fxRate));
             $plnGrosze = $result->marketValuePln === null ? null : Decimal::plnToGrosze($result->marketValuePln);
 
-            $rows[] = new PortfolioValuationRow($position->id, $position->accountId, $position->canonicalInstrument, $position->quantity, $result->availability, $plnGrosze, $result->diagnostics);
+            $rows[] = new PortfolioValuationRow($position->id, $position->accountId, $position->canonicalInstrument, $position->quantity, $price, $fxRate, $result->availability, $plnGrosze, $result->diagnostics);
 
             if ($plnGrosze !== null) {
                 $totalPlnGrosze = self::checkedAddGrosze($totalPlnGrosze, $plnGrosze);
