@@ -23,6 +23,17 @@ final class Decimal
         return bcdiv(bcadd($value, '0.005', max(self::scale($value), 3)), '1', 2);
     }
 
+    public static function plnToGrosze(string $value): int
+    {
+        $grosze = bcmul($value, '100', 0);
+
+        if (bccomp($grosze, (string) PHP_INT_MAX, 0) === 1) {
+            throw new InvalidArgumentException('PLN grosze value exceeds the supported integer range.');
+        }
+
+        return (int) $grosze;
+    }
+
     private static function scale(string $value): int
     {
         $decimalSeparator = strpos($value, '.');

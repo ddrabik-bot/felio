@@ -218,6 +218,16 @@ Run the focused PostgreSQL persistence checks with:
 make test-portfolio-persistence
 ```
 
+## Portfolio valuation read model
+
+`PortfolioValuationService` reads immutable valid import source rows as historical position snapshots: for every account and canonical instrument it selects the latest `as_of` at or before the explicit valuation date, then deterministic batch and source-row tie-breakers. It never treats the mutable `portfolio_positions` projection as historical truth. The read model selects only exact-date market OHLC and FX requested-date observations, rejects ambiguous observations, applies the existing stale-FX policy, and carries unavailable diagnostics without fallback. Available per-position PLN values and portfolio totals use integer grosze; checked accumulation rejects a total outside the PHP integer range.
+
+Run its focused PostgreSQL coverage with:
+
+```sh
+make test-portfolio-valuation
+```
+
 No XLSX parsing, market valuation, FX conversion, dashboard, scheduler, or
 background importing is implemented by this boundary.
 
