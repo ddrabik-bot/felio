@@ -76,7 +76,7 @@ it('renders an authorization-free dashboard for an explicit valuation date', fun
         ->assertInertia(fn (Assert $page) => $page
             ->component('Portfolio/ValuationDashboard', false)
             ->where('valuationDate', '2026-01-02')
-            ->where('totalPlnGrosze', 2000)
+            ->where('totalPlnGrosze', '2000')
             ->where('state', 'ready')
             ->where('error', null)
             ->has('positions', 1)
@@ -95,7 +95,7 @@ it('renders an empty dashboard without inventing portfolio totals', function ():
         ->assertInertia(fn (Assert $page) => $page
             ->component('Portfolio/ValuationDashboard', false)
             ->where('valuationDate', '2026-01-02')
-            ->where('totalPlnGrosze', 0)
+            ->where('totalPlnGrosze', '0')
             ->where('state', 'empty')
             ->has('positions', 0)
         );
@@ -110,7 +110,7 @@ it('keeps unavailable positions and stale FX diagnostics visible in deterministi
     $this->get('/portfolio/valuation?date=2026-01-02')
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->where('totalPlnGrosze', 0)
+            ->where('totalPlnGrosze', '0')
             ->where('state', 'ready')
             ->has('positions', 2)
             ->where('positions.0.instrument', 'ALPHA.PL')
@@ -124,6 +124,18 @@ it('keeps unavailable positions and stale FX diagnostics visible in deterministi
             ->where('positions.1.fx.diagnostic', 'source_stale')
             ->where('positions.1.diagnostics', ['fx_rate_stale_rejected:source_stale'])
             ->where('positions.1.plnGrosze', null)
+        );
+});
+
+it('serializes large total PLN grosze as an exact decimal string', function (): void {
+    dashboardImportPosition('dashboard-large-total', '2026-01-02T00:00:00+01:00', 'LARGE.PL', '1');
+    dashboardPrice('LARGE.PL', '2026-01-02', 'PLN', '90071992547409.93');
+
+    $this->get('/portfolio/valuation?date=2026-01-02')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totalPlnGrosze', '9007199254740993')
+            ->where('positions.0.plnGrosze', 9007199254740993)
         );
 });
 

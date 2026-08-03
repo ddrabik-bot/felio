@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 
 const props = defineProps({
     valuationDate: { type: String, required: true },
-    totalPlnGrosze: { type: Number, required: true },
+    totalPlnGrosze: { type: String, required: true },
     state: { type: String, required: true },
     error: { type: String, default: null },
     positions: { type: Array, required: true },

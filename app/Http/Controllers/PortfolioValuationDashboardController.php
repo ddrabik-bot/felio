@@ -21,7 +21,7 @@ final class PortfolioValuationDashboardController extends Controller
 
         return Inertia::render('Portfolio/ValuationDashboard', [
             'valuationDate' => $valuation->valuationDate->format('Y-m-d'),
-            'totalPlnGrosze' => $valuation->totalPlnGrosze,
+            'totalPlnGrosze' => (string) $valuation->totalPlnGrosze,
             'state' => $valuation->rows === [] ? 'empty' : 'ready',
             'error' => null,
             'positions' => array_map($this->position(...), $valuation->rows),
