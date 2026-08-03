@@ -191,6 +191,36 @@ Run the focused persistence checks against the Compose PostgreSQL service with:
 make test-market-data-persistence
 ```
 
+## Portfolio position and import boundary
+
+`PortfolioImportService` is a persistence boundary for a future XTB parser; it
+intentionally does not parse XLSX. A caller supplies a typed
+`CanonicalInstrument`, an exact decimal-string quantity, optional average cost
+in integer PLN grosze, an as-of timestamp, raw source values, and either a
+`valid` or `rejected` row status. Raw values reject PHP floats, while rejected
+rows retain raw JSON and a required diagnostic but can never create or alter a
+normalized position.
+
+The schema separates broker/account, import batch, source rows, and normalized
+positions. A position is unique by account plus canonical instrument; its
+latest valid source row carries the batch provenance. Batch identity is scoped
+to the account and source-row identity is scoped to the batch. Database-native
+`INSERT ... ON CONFLICT` upserts make a retry of an identical batch or source
+row idempotent, including concurrent PostgreSQL writers. Callers can derive a
+stable SHA-256 row identity with `PortfolioImportRow::deterministicIdentity()`;
+that identity combines a stable source-row reference with canonicalized raw
+source values, so duplicate-looking source rows do not collapse; it contains no
+float conversion or instrument fallback.
+
+Run the focused PostgreSQL persistence checks with:
+
+```sh
+make test-portfolio-persistence
+```
+
+No XLSX parsing, market valuation, FX conversion, dashboard, scheduler, or
+background importing is implemented by this boundary.
+
 ### Operate and stop the stack
 
 ```sh
@@ -215,6 +245,7 @@ make test-fx            Run deterministic NBP Table-A FX adapter tests.
 make test-valuation     Run deterministic valuation arithmetic and availability tests.
 make test-fx-persistence Run focused FX snapshot persistence tests on PostgreSQL.
 make test-market-data-persistence Run focused EOD persistence tests on PostgreSQL.
+make test-portfolio-persistence Run focused portfolio import and position checks on PostgreSQL.
 make frontend         Install locked npm dependencies and build Vite assets.
 make migrate          Apply pending Laravel migrations.
 make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.
