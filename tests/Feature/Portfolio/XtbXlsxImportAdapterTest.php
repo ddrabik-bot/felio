@@ -68,6 +68,131 @@ it('rejects ambiguous products in Cash Operations transaction rows when top meta
     }
 });
 
+it('extracts exact positive quantity and price strings from the canonical labeled cash comment', function (): void {
+    $path = sanitizedXtbWorkbookWithCashRows([[
+        'comment' => 'Quantity: 12345678901234567890.00000000000000000001; Price: 61.72500000',
+    ]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBe('12345678901234567890.00000000000000000001')
+            ->and($row->price)->toBe('61.72500000')
+            ->and($row->diagnostic)->toBeNull();
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('extracts exact positive quantity and price strings from the canonical stock cash comment', function (): void {
+    $path = sanitizedXtbWorkbookWithCashRows([[
+        'comment' => 'STOCK SELL 0.000000000000000000001 @ 61.72500000',
+    ]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBe('0.000000000000000000001')
+            ->and($row->price)->toBe('61.72500000')
+            ->and($row->diagnostic)->toBeNull();
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('preserves positive comment decimals below the BCMath legacy comparison scale', function (): void {
+    $path = sanitizedXtbWorkbookWithCashRows([[
+        'comment' => 'Quantity: 0.000000000000000000001; Price: 0.000000000000000000002',
+    ]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBe('0.000000000000000000001')
+            ->and($row->price)->toBe('0.000000000000000000002')
+            ->and($row->diagnostic)->toBeNull();
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('uses a canonical labeled comment only for missing direct cash fields', function (): void {
+    $path = sanitizedXtbWorkbookWithCashRows([
+        [
+            'volume' => '7.00000000',
+            'comment' => 'Quantity: 2.00000000; Price: 61.72500000',
+        ],
+        [
+            'price' => '9.50000000',
+            'comment' => 'Quantity: 3.00000000; Price: 10.00000000',
+        ],
+    ]);
+
+    try {
+        $rows = (new XtbXlsxParser)->parse($path)->rows;
+
+        expect($rows[0]->quantity)->toBe('7.00000000')
+            ->and($rows[0]->price)->toBe('61.72500000')
+            ->and($rows[0]->diagnostic)->toBeNull()
+            ->and($rows[1]->quantity)->toBe('3.00000000')
+            ->and($rows[1]->price)->toBe('9.50000000')
+            ->and($rows[1]->diagnostic)->toBeNull();
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('accepts complete direct cash fields without interpreting an unsupported comment', function (): void {
+    $path = sanitizedXtbWorkbookWithCashRows([[
+        'volume' => '2.00000000',
+        'price' => '61.72500000',
+        'comment' => 'Unstructured broker note',
+    ]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBe('2.00000000')
+            ->and($row->price)->toBe('61.72500000')
+            ->and($row->diagnostic)->toBeNull();
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('rejects non-canonical labeled cash comments when a direct cash field is missing', function (string $comment): void {
+    $path = sanitizedXtbWorkbookWithCashRows([['comment' => $comment]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBeNull()
+            ->and($row->price)->toBeNull()
+            ->and($row->diagnostic)->toBe('invalid_or_missing_labeled_trade_comment');
+    } finally {
+        @unlink($path);
+    }
+})->with([
+    'zero quantity' => 'Quantity: 0; Price: 61.72500000',
+    'zero price' => 'Quantity: 2.00000000; Price: 0',
+    'negative quantity' => 'Quantity: -2.00000000; Price: 61.72500000',
+    'negative price' => 'Quantity: 2.00000000; Price: -61.72500000',
+    'negative stock quantity' => 'STOCK BUY -2.00000000 @ 61.72500000',
+    'negative stock price' => 'STOCK SELL 2.00000000 @ -61.72500000',
+    'stock equals delimiter' => 'STOCK BUY 2.00000000 = 61.72500000',
+    'stock extra whitespace' => 'STOCK BUY  2.00000000 @ 61.72500000',
+    'stock trailing text' => 'STOCK BUY 2.00000000 @ 61.72500000 settled',
+    'stock unsupported operation' => 'STOCK HOLD 2.00000000 @ 61.72500000',
+    'leading-zero quantity' => 'Quantity: 02; Price: 61.72500000',
+    'comma decimal separator' => 'Quantity: 2,00000000; Price: 61.72500000',
+    'unexpected suffix' => 'Quantity: 2.00000000; Price: 61.72500000 settled',
+    'duplicate label' => 'Quantity: 2.00000000; Price: 61.72500000; Quantity: 3.00000000',
+    'unrelated two-word prefix' => 'Trade confirmation Quantity: 2.00000000; Price: 61.72500000',
+    'extra separator whitespace' => 'Quantity: 2.00000000;  Price: 61.72500000',
+    'space before label separator' => 'Quantity : 2.00000000; Price: 61.72500000',
+    'tab separator whitespace' => "Quantity: 2.00000000;\tPrice: 61.72500000",
+]);
+
 it('persists explicit cash-trade mappings idempotently while isolating rejected rows', function (): void {
     $adapter = new XtbPortfolioImportAdapter(new XtbXlsxParser, app(PortfolioImportService::class));
     $path = base_path('tests/Fixtures/Xtb/synthetic-xtb-statement.xlsx');
@@ -99,6 +224,15 @@ it('rejects otherwise valid cash trades without an explicit canonical mapping', 
 /** @param list<string> $products */
 function sanitizedXtbWorkbookWithCashProducts(array $products): string
 {
+    return sanitizedXtbWorkbookWithCashRows(array_map(
+        static fn (string $product): array => ['product' => $product],
+        $products,
+    ));
+}
+
+/** @param list<array{comment?: string, price?: string, product?: string, volume?: string}> $cashRows */
+function sanitizedXtbWorkbookWithCashRows(array $cashRows): string
+{
     $path = tempnam(sys_get_temp_dir(), 'xtb-product-fallback-');
     if ($path === false) {
         throw new RuntimeException('Unable to create a sanitized XTB workbook path.');
@@ -113,7 +247,7 @@ function sanitizedXtbWorkbookWithCashProducts(array $products): string
         $archive->addFromString('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>');
         $archive->addFromString('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Cash Operations" sheetId="1" r:id="rId1"/><sheet name="Closed Positions" sheetId="2" r:id="rId2"/></sheets></workbook>');
         $archive->addFromString('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Target="worksheets/sheet2.xml"/></Relationships>');
-        $archive->addFromString('xl/worksheets/sheet1.xml', cashOperationsSheet($products));
+        $archive->addFromString('xl/worksheets/sheet1.xml', cashOperationsSheet($cashRows));
         $archive->addFromString('xl/worksheets/sheet2.xml', '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Position</t></is></c><c r="B1" t="inlineStr"><is><t>Symbol</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t>1</t></is></c><c r="B2" t="inlineStr"><is><t>SANITIZED</t></is></c></row></sheetData></worksheet>');
     } finally {
         $archive->close();
@@ -122,17 +256,20 @@ function sanitizedXtbWorkbookWithCashProducts(array $products): string
     return $path;
 }
 
-/** @param list<string> $products */
-function cashOperationsSheet(array $products): string
+/** @param list<array{comment?: string, price?: string, product?: string, volume?: string}> $cashRows */
+function cashOperationsSheet(array $cashRows): string
 {
     $rows = '<row r="1"><c r="A1" t="inlineStr"><is><t>Account</t></is></c><c r="B1" t="inlineStr"><is><t>XTB-SANITIZED</t></is></c></row>'
         .'<row r="2"><c r="A2" t="inlineStr"><is><t>Product</t></is></c></row>'
-        .'<row r="5"><c r="A5" t="inlineStr"><is><t>Time</t></is></c><c r="B5" t="inlineStr"><is><t>Operation</t></is></c><c r="C5" t="inlineStr"><is><t>Symbol</t></is></c><c r="D5" t="inlineStr"><is><t>Volume</t></is></c><c r="E5" t="inlineStr"><is><t>Price</t></is></c><c r="F5" t="inlineStr"><is><t>Product</t></is></c></row>';
+        .'<row r="5"><c r="A5" t="inlineStr"><is><t>Time</t></is></c><c r="B5" t="inlineStr"><is><t>Operation</t></is></c><c r="C5" t="inlineStr"><is><t>Symbol</t></is></c><c r="D5" t="inlineStr"><is><t>Volume</t></is></c><c r="E5" t="inlineStr"><is><t>Price</t></is></c><c r="F5" t="inlineStr"><is><t>Product</t></is></c><c r="G5" t="inlineStr"><is><t>Comment</t></is></c></row>';
 
-    foreach ($products as $index => $product) {
+    foreach ($cashRows as $index => $cashRow) {
         $row = $index + 6;
-        $escapedProduct = htmlspecialchars($product, ENT_XML1 | ENT_QUOTES, 'UTF-8');
-        $rows .= '<row r="'.$row.'"><c r="A'.$row.'"><v>46000.5</v></c><c r="B'.$row.'" t="inlineStr"><is><t>BUY</t></is></c><c r="C'.$row.'" t="inlineStr"><is><t>SANITIZED</t></is></c><c r="D'.$row.'"><v>1</v></c><c r="E'.$row.'"><v>10</v></c><c r="F'.$row.'" t="inlineStr"><is><t>'.$escapedProduct.'</t></is></c></row>';
+        $volume = htmlspecialchars($cashRow['volume'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $price = htmlspecialchars($cashRow['price'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $product = htmlspecialchars($cashRow['product'] ?? 'STOCK', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $comment = htmlspecialchars($cashRow['comment'] ?? '', ENT_XML1 | ENT_QUOTES, 'UTF-8');
+        $rows .= '<row r="'.$row.'"><c r="A'.$row.'"><v>46000.5</v></c><c r="B'.$row.'" t="inlineStr"><is><t>BUY</t></is></c><c r="C'.$row.'" t="inlineStr"><is><t>SANITIZED</t></is></c><c r="D'.$row.'" t="inlineStr"><is><t>'.$volume.'</t></is></c><c r="E'.$row.'" t="inlineStr"><is><t>'.$price.'</t></is></c><c r="F'.$row.'" t="inlineStr"><is><t>'.$product.'</t></is></c><c r="G'.$row.'" t="inlineStr"><is><t>'.$comment.'</t></is></c></row>';
     }
 
     return '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'.$rows.'</sheetData></worksheet>';

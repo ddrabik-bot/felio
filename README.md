@@ -237,8 +237,17 @@ and `Closed Positions` worksheets. It validates matching account/product metadat
 converts Excel serial timestamps to UTC without floating-point arithmetic, retains
 source decimals as strings, and produces a deterministic source reference per sheet
 row. Cash `BUY` and `SELL` rows require a timestamp, symbol, positive volume, and
-positive price. Unsupported cash operations, closed positions, missing fields, and
-invalid fields remain rejected rows with explicit diagnostics.
+positive price. If either direct `Volume` or `Price` is absent, the parser accepts
+only these fully anchored, ASCII-exact sanitized `Comment` forms:
+`Quantity: <positive-decimal>; Price: <positive-decimal>` or
+`STOCK BUY|SELL <positive-decimal> @ <positive-decimal>`. There is exactly one
+space at each documented boundary; labels and the `STOCK` operation are case-sensitive.
+The comment supplies only absent direct fields; complete direct fields are never
+overridden or invalidated by an unsupported comment. Comments with additional text,
+prefixes, duplicate labels, alternate whitespace, comma separators, or malformed/
+non-positive numbers are rejected with
+`invalid_or_missing_labeled_trade_comment`. Unsupported cash operations, closed
+positions, missing fields, and invalid fields remain rejected rows with explicit diagnostics.
 
 `XtbPortfolioImportAdapter` is the only adapter that feeds the existing import
 boundary. It maps a valid cash row only when the caller supplies an exact

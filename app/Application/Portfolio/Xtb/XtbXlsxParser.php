@@ -176,15 +176,27 @@ final class XtbXlsxParser
             }
             $asOf = $this->asOf($values['timestamp'] ?? null);
             $operation = $this->operation($values['operation'] ?? null);
+            $hasDirectVolume = array_key_exists('volume', $values);
+            $hasDirectPrice = array_key_exists('price', $values);
+            $directQuantity = $hasDirectVolume ? $this->decimal($values['volume']) : null;
+            $directPrice = $hasDirectPrice ? $this->decimal($values['price']) : null;
+            $commentTrade = ! $hasDirectVolume || ! $hasDirectPrice
+                ? $this->labeledTradeComment($values['comment'] ?? null)
+                : null;
+            $quantity = $directQuantity ?? $commentTrade['quantity'] ?? null;
+            $price = $directPrice ?? $commentTrade['price'] ?? null;
             $diagnostic = match (true) {
                 $asOf === null => 'invalid_or_missing_timestamp',
                 $operation === null => 'unsupported_cash_operation',
                 ($values['symbol'] ?? '') === '' => 'missing_instrument_symbol',
-                ! $this->decimal($values['volume'] ?? null) => 'invalid_or_missing_volume',
-                ! $this->decimal($values['price'] ?? null) => 'invalid_or_missing_price',
+                $hasDirectVolume && $directQuantity === null => 'invalid_or_missing_volume',
+                $hasDirectPrice && $directPrice === null => 'invalid_or_missing_price',
+                (! $hasDirectVolume || ! $hasDirectPrice) && $commentTrade === null => 'invalid_or_missing_labeled_trade_comment',
+                $quantity === null => 'invalid_or_missing_volume',
+                $price === null => 'invalid_or_missing_price',
                 default => null,
             };
-            $parsed[] = new XtbParsedRow('Cash Operations', 'Cash Operations:'.$row['__row'], $operation, $values['symbol'] ?? null, $values['comment'] ?? null, $values['volume'] ?? null, $values['price'] ?? null, $asOf ?? new DateTimeImmutable('@0'), $values, $diagnostic);
+            $parsed[] = new XtbParsedRow('Cash Operations', 'Cash Operations:'.$row['__row'], $operation, $values['symbol'] ?? null, $values['comment'] ?? null, $quantity, $price, $asOf ?? new DateTimeImmutable('@0'), $values, $diagnostic);
         }
 
         return $parsed;
@@ -267,11 +279,30 @@ final class XtbXlsxParser
         };
     }
 
+    /** @return array{quantity: string, price: string}|null */
+    private function labeledTradeComment(?string $comment): ?array
+    {
+        if (preg_match('/\A(?:Quantity: (?<labeledQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?); Price: (?<labeledPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)|STOCK (?:BUY|SELL) (?<stockQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?) @ (?<stockPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?))\z/D', (string) $comment, $matches, PREG_UNMATCHED_AS_NULL) !== 1) {
+            return null;
+        }
+
+        $quantity = $matches['labeledQuantity'] ?? $matches['stockQuantity'];
+        $price = $matches['labeledPrice'] ?? $matches['stockPrice'];
+
+        return preg_match('/\A0(?:\.0+)?\z/', $quantity) !== 1
+            && preg_match('/\A0(?:\.0+)?\z/', $price) !== 1
+            ? ['quantity' => $quantity, 'price' => $price]
+            : null;
+    }
+
     private function decimal(?string $value): ?string
     {
-        $value = str_replace([' ', ','], ['', '.'], trim((string) $value));
+        $value = trim((string) $value);
 
-        return preg_match('/^[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/', $value) === 1 && bccomp($value, '0', 20) === 1 ? $value : null;
+        return preg_match('/\A(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\z/D', $value) === 1
+            && preg_match('/\A0(?:\.0+)?\z/D', $value) !== 1
+            ? $value
+            : null;
     }
 
     private function asOf(?string $serial): ?DateTimeImmutable
