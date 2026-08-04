@@ -34,6 +34,18 @@ it('derives a unique product from Cash Operations transaction rows when top meta
     }
 });
 
+it('ignores blank Cash Operations product cells while deriving the unique product', function (): void {
+    $path = sanitizedXtbWorkbookWithCashProducts(['', 'STOCK']);
+
+    try {
+        $result = (new XtbXlsxParser)->parse($path);
+
+        expect($result->product)->toBe('STOCK');
+    } finally {
+        @unlink($path);
+    }
+});
+
 it('rejects a missing product when neither top metadata nor Cash Operations rows provide one', function (): void {
     $path = sanitizedXtbWorkbookWithCashProducts(['', '']);
 
