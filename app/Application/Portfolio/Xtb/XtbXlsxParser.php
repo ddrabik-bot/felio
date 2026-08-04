@@ -43,7 +43,7 @@ final class XtbXlsxParser
         $cash = $sheets['Cash Operations'];
         $closed = $sheets['Closed Positions'];
         $accountReference = $this->metadata($cash, 'account');
-        $product = $this->metadata($cash, 'product');
+        $product = $this->metadata($cash, 'product') ?? $this->uniqueCashProduct($cash);
 
         if ($accountReference === null || $product === null) {
             throw new InvalidArgumentException('The XTB workbook is missing account or product metadata.');
@@ -142,6 +142,26 @@ final class XtbXlsxParser
         }
 
         return null;
+    }
+
+    /** @param list<array<string, string>> $rows */
+    private function uniqueCashProduct(array $rows): ?string
+    {
+        [$headers, $firstDataRow] = $this->headers($rows, ['timestamp', 'operation', 'symbol']);
+        $productColumn = $headers['product'] ?? null;
+        if ($productColumn === null) {
+            return null;
+        }
+
+        $products = [];
+        foreach (array_slice($rows, $firstDataRow) as $row) {
+            $product = $row[$productColumn] ?? '';
+            if ($product !== '') {
+                $products[$product] = true;
+            }
+        }
+
+        return count($products) === 1 ? array_key_first($products) : null;
     }
 
     /** @param list<array<string, string>> $rows @return list<XtbParsedRow> */
