@@ -230,6 +230,29 @@ make test-portfolio-valuation
 
 No XLSX parsing, market valuation, FX conversion, scheduler, or background importing is implemented by this boundary.
 
+## XTB XLSX import adapter
+
+`XtbXlsxParser` reads only local XLSX files and recognizes the XTB `Cash Operations`
+and `Closed Positions` worksheets. It validates matching account/product metadata,
+converts Excel serial timestamps to UTC without floating-point arithmetic, retains
+source decimals as strings, and produces a deterministic source reference per sheet
+row. Cash `BUY` and `SELL` rows require a timestamp, symbol, positive volume, and
+positive price. Unsupported cash operations, closed positions, missing fields, and
+invalid fields remain rejected rows with explicit diagnostics.
+
+`XtbPortfolioImportAdapter` is the only adapter that feeds the existing import
+boundary. It maps a valid cash row only when the caller supplies an exact
+source-symbol to `CanonicalInstrument` mapping; it never guesses a provider symbol
+or canonical instrument. The local SHA-256 workbook identity and deterministic row
+identity make a repeated import idempotent. The committed XLSX test fixture is fully
+synthetic and contains no production account, transaction, or comment data.
+
+Run its PostgreSQL-backed coverage with:
+
+```sh
+make test-xtb-import
+```
+
 ## Portfolio valuation dashboard
 
 `GET /portfolio/valuation?date=YYYY-MM-DD` is an authorization-free local Inertia dashboard over the existing portfolio valuation read model. The `date` query parameter is required and is the exact valuation date; it never defaults to the current date. The backend supplies the integer PLN-grosze total, deterministic position rows, source price metadata, FX status, valuation availability, and all diagnostics. The Vue page only renders these values; it does not calculate money, select source data, or omit unavailable positions.

@@ -2,7 +2,7 @@ COMPOSE ?= docker compose
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
+.PHONY: up down restart logs build ps test test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-xtb-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
 
 up:
 	$(COMPOSE) up -d
@@ -51,6 +51,11 @@ test-portfolio-dashboard:
 	$(COMPOSE) up -d db
 	$(COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force
 	$(COMPOSE) run --rm --no-deps app php vendor/bin/pest tests/Feature/Portfolio/PortfolioValuationDashboardTest.php
+
+test-xtb-import:
+	$(COMPOSE) up -d db
+	$(COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force
+	$(COMPOSE) run --rm --no-deps app php vendor/bin/pest tests/Feature/Portfolio/XtbXlsxImportAdapterTest.php
 
 frontend:
 	$(COMPOSE) build app
