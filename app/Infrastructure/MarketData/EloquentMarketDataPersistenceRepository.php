@@ -94,7 +94,9 @@ final class EloquentMarketDataPersistenceRepository implements MarketDataPersist
             $date = $event['date'];
             $value = $event[$valueField];
             $providerEventId = trim($event['provider_event_id'] ?? '');
-            $identityValue = $providerEventId !== '' ? $value : $this->canonicalExactDecimal($value);
+            // Provider IDs are authoritative: a provider retry must retain the
+            // same identity even if the provider changes decimal formatting.
+            $identityValue = $providerEventId === '' ? $this->canonicalExactDecimal($value) : '';
             $normalizedIdentity = implode("\x1f", [$type, $date, $identityValue]);
 
             $sourceIdentity = $providerEventId !== ''
@@ -127,8 +129,8 @@ final class EloquentMarketDataPersistenceRepository implements MarketDataPersist
             return $value;
         }
 
-        $integer = ltrim($matches[2] !== '' ? $matches[2] : '0', '0');
-        $fraction = rtrim($matches[3] !== '' ? $matches[3] : ($matches[4] ?? ''), '0');
+        $integer = ltrim(($matches[2] ?? '') !== '' ? $matches[2] : '0', '0');
+        $fraction = rtrim(($matches[3] ?? '') !== '' ? $matches[3] : ($matches[4] ?? ''), '0');
         $integer = $integer === '' ? '0' : $integer;
 
         if ($integer === '0' && $fraction === '') {

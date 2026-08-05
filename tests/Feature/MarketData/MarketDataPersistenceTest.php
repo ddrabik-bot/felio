@@ -83,6 +83,23 @@ it('preserves distinct same-day corporate actions by provider event identity', f
     ]))->toThrow(QueryException::class);
 });
 
+it('prefers provider event identity over a changed action value representation', function (): void {
+    $service = app(MarketDataPersistenceService::class);
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => '0.250', 'provider_event_id' => 'div-101'],
+    ]), '2026-08-01');
+    $identity = DB::table('corporate_actions')->value('event_identity');
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => '0.25', 'provider_event_id' => 'div-101'],
+    ]), '2026-08-01');
+
+    expect(DB::table('corporate_actions')->count())->toBe(1)
+        ->and(DB::table('corporate_actions')->value('event_identity'))->toBe($identity)
+        ->and(DB::table('corporate_actions')->value('value'))->toBe('0.250');
+});
+
 it('retains duplicate raw same-day actions without provider event IDs across a retry', function (): void {
     $service = app(MarketDataPersistenceService::class);
     $dividends = [
@@ -127,6 +144,27 @@ it('preserves arbitrarily precise fallback decimal identity without numeric coer
 
     expect(DB::table('corporate_actions')->count())->toBe(1)
         ->and(DB::table('corporate_actions')->value('event_identity'))->toBe($identity);
+});
+
+it('canonicalizes negative and zero fallback decimals without collapsing nonzero values', function (): void {
+    $service = app(MarketDataPersistenceService::class);
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => '-0.2500'],
+        ['date' => '2026-01-15', 'amount' => '0.000'],
+        ['date' => '2026-01-15', 'amount' => '0.0001'],
+    ]), '2026-08-01');
+    $identities = DB::table('corporate_actions')->orderBy('event_identity')->pluck('event_identity')->all();
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => '-0.25'],
+        ['date' => '2026-01-15', 'amount' => '0'],
+        ['date' => '2026-01-15', 'amount' => '0.0001000'],
+    ]), '2026-08-01');
+
+    expect(DB::table('corporate_actions')->count())->toBe(3)
+        ->and(DB::table('corporate_actions')->orderBy('event_identity')->pluck('event_identity')->all())
+        ->toBe($identities);
 });
 
 it('keeps equivalent fallback duplicate occurrences idempotent when source order changes', function (): void {

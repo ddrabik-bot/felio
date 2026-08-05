@@ -176,13 +176,18 @@ provider, provider symbol, and session date. Daily OHLC rows are unique within
 the snapshot by trading date. Both identities are written using PostgreSQL
 native `INSERT ... ON CONFLICT` upserts, making provider retries idempotent.
 
-Corporate-action values and OHLC values are stored as exact source strings, not
-PHP floats. Each action has a SHA-256 identity derived from its type, source
-date, and provider event ID when present. Without a provider ID, the identity
-uses a canonical exact-decimal representation (string normalization only: no
-float conversion) plus a deterministic occurrence within the identical-event
-group, so equivalent representations such as `0.25` and `0.250` are idempotent
-while otherwise distinct same-day events remain distinct.
+Corporate-action values and OHLC values enter persistence as exact decimal
+strings, never PHP floats. SQLite keeps those values as `TEXT` in tests, so it
+retains their lexical representation. PostgreSQL converts the production columns
+to unconstrained `NUMERIC`: the numeric value remains exact, but PostgreSQL does
+not retain lexical formatting such as trailing zeroes. Identity construction uses
+the input decimal strings before persistence, not a value read back from a
+PostgreSQL `NUMERIC` column. Each action has a SHA-256 identity derived from its
+type, source date, and provider event ID when present. Without a provider ID,
+the identity uses a canonical exact-decimal representation (string normalization
+only: no float conversion) plus a deterministic occurrence within the
+identical-event group, so equivalent representations such as `0.25` and `0.250`
+are idempotent while otherwise distinct same-day events remain distinct.
 Snapshot records retain the explicit retrieval timestamp, source
 timezone, and provider version supplied by the adapter. Unavailable and no-data
 instruments create no snapshot, OHLC, or action records. This boundary performs
