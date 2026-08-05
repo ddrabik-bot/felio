@@ -96,6 +96,73 @@ it('retains duplicate raw same-day actions without provider event IDs across a r
     expect(DB::table('corporate_actions')->where('action_type', 'dividend')->count())->toBe(2);
 });
 
+it('canonicalizes economically equivalent exact fallback decimal representations', function (): void {
+    $service = app(MarketDataPersistenceService::class);
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => '0.25'],
+    ]), '2026-08-01');
+    $identity = DB::table('corporate_actions')->value('event_identity');
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => '0.250'],
+    ]), '2026-08-01');
+
+    expect(DB::table('corporate_actions')->count())->toBe(1)
+        ->and(DB::table('corporate_actions')->value('event_identity'))->toBe($identity);
+});
+
+it('preserves arbitrarily precise fallback decimal identity without numeric coercion', function (): void {
+    $service = app(MarketDataPersistenceService::class);
+    $preciseValue = '123456789012345678901234567890.123456789012345678900';
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => $preciseValue],
+    ]), '2026-08-01');
+    $identity = DB::table('corporate_actions')->value('event_identity');
+
+    $service->persist(eodMarketData(dividends: [
+        ['date' => '2026-01-15', 'amount' => rtrim($preciseValue, '0')],
+    ]), '2026-08-01');
+
+    expect(DB::table('corporate_actions')->count())->toBe(1)
+        ->and(DB::table('corporate_actions')->value('event_identity'))->toBe($identity);
+});
+
+it('keeps equivalent fallback duplicate occurrences idempotent when source order changes', function (): void {
+    $service = app(MarketDataPersistenceService::class);
+    $dividends = [
+        ['date' => '2026-01-15', 'amount' => '0.25'],
+        ['date' => '2026-01-15', 'amount' => '0.250'],
+        ['date' => '2026-01-15', 'amount' => '0.50'],
+    ];
+
+    $service->persist(eodMarketData(dividends: $dividends), '2026-08-01');
+    $identities = DB::table('corporate_actions')->orderBy('event_identity')->pluck('event_identity')->all();
+
+    $service->persist(eodMarketData(dividends: array_reverse($dividends)), '2026-08-01');
+
+    expect(DB::table('corporate_actions')->where('action_type', 'dividend')->count())->toBe(3)
+        ->and(DB::table('corporate_actions')->orderBy('event_identity')->pluck('event_identity')->all())
+        ->toBe($identities);
+});
+
+it('keeps fallback actions with different type, date, or exact value distinct', function (): void {
+    app(MarketDataPersistenceService::class)->persist(eodMarketData(
+        dividends: [
+            ['date' => '2026-01-15', 'amount' => '0.25'],
+            ['date' => '2026-01-16', 'amount' => '0.25'],
+            ['date' => '2026-01-15', 'amount' => '0.25000000000000000001'],
+        ],
+        splits: [
+            ['date' => '2026-01-15', 'ratio' => '0.25'],
+        ],
+    ), '2026-08-01');
+
+    expect(DB::table('corporate_actions')->count())->toBe(4)
+        ->and(DB::table('corporate_actions')->distinct()->pluck('event_identity')->all())->toHaveCount(4);
+});
+
 it('keeps one snapshot and its logical children when PostgreSQL workers persist concurrently', function (): void {
     expect(DB::getDriverName())->toBe('pgsql');
 
