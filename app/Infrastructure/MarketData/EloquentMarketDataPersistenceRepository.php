@@ -68,8 +68,8 @@ final class EloquentMarketDataPersistenceRepository implements MarketDataPersist
             }
 
             $corporateActions = [
-                ...array_map(fn (array $event, int $index): array => $this->corporateAction($snapshotId, 'dividend', $event['date'], $event['amount'], $event['provider_event_id'] ?? (string) $index, $now), $snapshot->dividends, array_keys($snapshot->dividends)),
-                ...array_map(fn (array $event, int $index): array => $this->corporateAction($snapshotId, 'split', $event['date'], $event['ratio'], $event['provider_event_id'] ?? (string) $index, $now), $snapshot->splits, array_keys($snapshot->splits)),
+                ...$this->corporateActions($snapshotId, 'dividend', $snapshot->dividends, 'amount', $now),
+                ...$this->corporateActions($snapshotId, 'split', $snapshot->splits, 'ratio', $now),
             ];
 
             if ($corporateActions !== []) {
@@ -82,17 +82,59 @@ final class EloquentMarketDataPersistenceRepository implements MarketDataPersist
         });
     }
 
+    /**
+     * @param  list<array<string, string>>  $events
+     * @return list<array<string, Carbon|int|string>>
+     */
+    private function corporateActions(int $snapshotId, string $type, array $events, string $valueField, Carbon $now): array
+    {
+        $fallbackOccurrences = [];
+
+        return array_map(function (array $event) use ($snapshotId, $type, $valueField, $now, &$fallbackOccurrences): array {
+            $date = $event['date'];
+            $value = $event[$valueField];
+            $providerEventId = trim($event['provider_event_id'] ?? '');
+            $identityValue = $providerEventId !== '' ? $value : $this->canonicalExactDecimal($value);
+            $normalizedIdentity = implode("\x1f", [$type, $date, $identityValue]);
+
+            $sourceIdentity = $providerEventId !== ''
+                ? "provider\x1f{$providerEventId}"
+                : "normalized\x1f{$normalizedIdentity}\x1f".($fallbackOccurrences[$normalizedIdentity] = ($fallbackOccurrences[$normalizedIdentity] ?? 0) + 1);
+
+            return $this->corporateAction($snapshotId, $type, $date, $value, $identityValue, $sourceIdentity, $now);
+        }, $events);
+    }
+
     /** @return array<string, Carbon|int|string> */
-    private function corporateAction(int $snapshotId, string $type, string $date, string $value, string $providerEventIdentity, Carbon $now): array
+    private function corporateAction(int $snapshotId, string $type, string $date, string $value, string $identityValue, string $sourceIdentity, Carbon $now): array
     {
         return [
             'market_data_snapshot_id' => $snapshotId,
             'action_type' => $type,
             'action_date' => $date,
             'value' => $value,
-            'event_identity' => hash('sha256', implode("\x1f", [$type, $date, $value, $providerEventIdentity])),
+            'event_identity' => hash('sha256', implode("\x1f", [$type, $date, $identityValue, $sourceIdentity])),
             'created_at' => $now,
             'updated_at' => $now,
         ];
+    }
+
+    private function canonicalExactDecimal(string $value): string
+    {
+        $trimmed = trim($value);
+
+        if (! preg_match('/^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))$/', $trimmed, $matches)) {
+            return $value;
+        }
+
+        $integer = ltrim($matches[2] !== '' ? $matches[2] : '0', '0');
+        $fraction = rtrim($matches[3] !== '' ? $matches[3] : ($matches[4] ?? ''), '0');
+        $integer = $integer === '' ? '0' : $integer;
+
+        if ($integer === '0' && $fraction === '') {
+            return '0';
+        }
+
+        return ($matches[1] === '-' ? '-' : '').$integer.($fraction === '' ? '' : ".{$fraction}");
     }
 }

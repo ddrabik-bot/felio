@@ -97,9 +97,12 @@ native `INSERT ... ON CONFLICT` upserts, making provider retries idempotent.
 
 Corporate-action values and OHLC values are stored as exact source strings, not
 PHP floats. Each action has a SHA-256 identity derived from its type, source
-date, raw value, and a provider event ID (or stable source-array position when
-the provider has none), so even otherwise identical raw same-day events remain
-distinct. Snapshot records retain the explicit retrieval timestamp, source
+date, and provider event ID when present. Without a provider ID, the identity
+uses a canonical exact-decimal representation (string normalization only: no
+float conversion) plus a deterministic occurrence within the identical-event
+group, so equivalent representations such as `0.25` and `0.250` are idempotent
+while otherwise distinct same-day events remain distinct.
+Snapshot records retain the explicit retrieval timestamp, source
 timezone, and provider version supplied by the adapter. Unavailable and no-data
 instruments create no snapshot, OHLC, or action records. This boundary performs
 no valuation, FX, XTB import, dashboard, scheduler, or provider fallback work.

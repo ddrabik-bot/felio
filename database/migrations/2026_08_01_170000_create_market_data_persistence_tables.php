@@ -22,6 +22,7 @@ return new class extends Migration
             $table->string('provider_version');
             $table->timestamps();
 
+            // Snapshot upsert conflict key: canonical instrument + provider + provider symbol + session date.
             $table->unique(
                 ['canonical_instrument', 'provider', 'provider_symbol', 'session_date'],
                 'market_data_snapshots_identity_unique',
@@ -40,6 +41,7 @@ return new class extends Migration
             $table->text('close');
             $table->timestamps();
 
+            // Daily OHLC upsert conflict key: snapshot + trading date.
             $table->unique(['market_data_snapshot_id', 'trading_date'], 'daily_ohlc_observations_identity_unique');
         });
 
@@ -53,6 +55,10 @@ return new class extends Migration
             $table->char('event_identity', 64);
             $table->timestamps();
 
+            // Corporate-action upsert conflict key: snapshot + deterministic event identity.
+            // event_identity is derived from provider event identity when present; otherwise the
+            // implementation must include normalized type/date/value and an occurrence dimension
+            // to distinguish repeated otherwise-equal normalized events.
             $table->unique(['market_data_snapshot_id', 'event_identity'], 'corporate_actions_identity_unique');
         });
 
