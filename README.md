@@ -236,9 +236,12 @@ No XLSX parsing, market valuation, FX conversion, scheduler, or background impor
 and `Closed Positions` worksheets. It validates matching account/product metadata,
 converts Excel serial timestamps to UTC without floating-point arithmetic, retains
 source decimals as strings, and produces a deterministic source reference per sheet
-row. Cash `BUY` and `SELL` rows require a timestamp, symbol, positive volume, and
-positive price. If either direct `Volume` or `Price` is absent, the parser accepts
-only these fully anchored, ASCII-exact sanitized `Comment` forms:
+row. Only the case-sensitive operation values `Stock purchase` and `Stock sale` map to
+`buy` and `sell`; every other cash operation is rejected. Valid mapped cash rows require
+a timestamp, symbol, positive volume, and positive price. If either direct `Volume` or
+`Price` is absent, the parser accepts only these fully anchored, ASCII-exact
+`Comment` forms. It preserves raw cell text before validating `Operation` and
+`Comment`, so leading or trailing ASCII spaces, tabs, and newlines are rejected:
 `Quantity: <positive-decimal>; Price: <positive-decimal>` or
 `STOCK BUY|SELL <positive-decimal> @ <positive-decimal>`. There is exactly one
 space at each documented boundary; labels and the `STOCK` operation are case-sensitive.

@@ -95,7 +95,7 @@ final class XtbXlsxParser
 
         $strings = [];
         foreach ($this->xml($archive, 'xl/sharedStrings.xml')->xpath('//*[local-name() = "si"]') ?: [] as $string) {
-            $strings[] = trim(implode('', array_map(static fn (SimpleXMLElement $text): string => (string) $text, iterator_to_array($string->xpath('.//*[local-name() = "t"]') ?: []))));
+            $strings[] = implode('', array_map(static fn (SimpleXMLElement $text): string => (string) $text, iterator_to_array($string->xpath('.//*[local-name() = "t"]') ?: [])));
         }
 
         return $strings;
@@ -116,10 +116,10 @@ final class XtbXlsxParser
                 $type = (string) $cell['t'];
                 $value = match ($type) {
                     's' => $sharedStrings[(int) $cell->v] ?? '',
-                    'inlineStr' => trim(implode('', array_map(static fn (SimpleXMLElement $text): string => (string) $text, iterator_to_array($cell->xpath('.//*[local-name() = "t"]') ?: [])))),
+                    'inlineStr' => implode('', array_map(static fn (SimpleXMLElement $text): string => (string) $text, iterator_to_array($cell->xpath('.//*[local-name() = "t"]') ?: []))),
                     default => (string) $cell->v,
                 };
-                $values[$column] = trim($value);
+                $values[$column] = $value;
             }
             $rows[] = $values;
         }
@@ -272,9 +272,9 @@ final class XtbXlsxParser
 
     private function operation(?string $value): ?string
     {
-        return match (mb_strtolower(trim((string) $value), 'UTF-8')) {
-            'buy', 'purchase', 'kupno' => 'buy',
-            'sell', 'sale', 'sprzedaż' => 'sell',
+        return match ($value) {
+            'Stock purchase' => 'buy',
+            'Stock sale' => 'sell',
             default => null,
         };
     }
