@@ -1,0 +1,51 @@
+name: ${FELIO_COMPOSE_PROJECT:-felio-test}
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www/html
+    environment:
+      APP_ENV: testing
+      APP_DEBUG: "true"
+      APP_KEY: base64:Uu9pib5bVJrdUQJZ8OMO7pPqL3HP/3l4FiZNsWkubHY=
+      APP_URL: http://localhost
+      SESSION_DRIVER: array
+      CACHE_STORE: array
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: felio
+      DB_USERNAME: felio
+      DB_PASSWORD: felio
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - felio_test_net
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: felio
+      POSTGRES_USER: felio
+      POSTGRES_PASSWORD: felio
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U felio -d felio"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - felio_test_net
+
+volumes:
+  postgres_data:
+    name: ${FELIO_COMPOSE_PROJECT:-felio-test}_postgres_data
+
+networks:
+  felio_test_net:
+    name: ${FELIO_COMPOSE_PROJECT:-felio-test}_felio_test_net
+    driver: bridge

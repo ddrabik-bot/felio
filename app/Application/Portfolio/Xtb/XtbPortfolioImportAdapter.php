@@ -6,6 +6,7 @@ use App\Domain\MarketData\CanonicalInstrument;
 use App\Domain\Portfolio\ImportBatch;
 use App\Domain\Portfolio\PortfolioImportRow;
 use App\Domain\Portfolio\PortfolioImportService;
+use App\Domain\Portfolio\SourceRowStatus;
 use DateTimeImmutable;
 use InvalidArgumentException;
 
@@ -17,7 +18,7 @@ final readonly class XtbPortfolioImportAdapter
     ) {}
 
     /** @param array<string, CanonicalInstrument> $explicitInstrumentMappings */
-    public function import(string $path, array $explicitInstrumentMappings, DateTimeImmutable $importedAt): XtbImportResult
+    public function analyze(string $path, array $explicitInstrumentMappings): XtbImportAnalysis
     {
         foreach ($explicitInstrumentMappings as $symbol => $instrument) {
             if (! is_string($symbol) || ! $instrument instanceof CanonicalInstrument) {
@@ -27,30 +28,50 @@ final readonly class XtbPortfolioImportAdapter
 
         $workbook = $this->parser->parse($path);
         $rows = [];
-        $valid = 0;
-        $rejected = 0;
         foreach ($workbook->rows as $parsed) {
-            $rawValues = ['sheet' => $parsed->sheet, ...$parsed->rawValues];
+            $rawValues = [
+                'sheet' => $parsed->sheet,
+                'source_row_reference' => $parsed->sourceRowReference,
+                'xtb_symbol' => $parsed->symbol,
+                'xtb_operation' => $parsed->operation,
+                'xtb_quantity' => $parsed->quantity,
+                ...$parsed->rawValues,
+            ];
             $identity = PortfolioImportRow::deterministicIdentity($rawValues, $parsed->sourceRowReference);
             $instrument = $parsed->symbol === null ? null : ($explicitInstrumentMappings[$parsed->symbol] ?? null);
             if ($parsed->isValidCashTrade() && $instrument !== null) {
                 $rows[] = PortfolioImportRow::valid($identity, $instrument, $parsed->quantity, null, $parsed->asOf, $rawValues);
-                $valid++;
 
                 continue;
             }
+            if ($parsed->isValidCashTrade()) {
+                $rows[] = PortfolioImportRow::pending($identity, $parsed->asOf, $rawValues, 'canonical_instrument_unresolved');
 
-            $diagnostic = $parsed->diagnostic ?? 'canonical_instrument_unresolved';
-            $rows[] = PortfolioImportRow::rejected($identity, $parsed->asOf, $rawValues, $diagnostic);
-            $rejected++;
+                continue;
+            }
+            $rows[] = PortfolioImportRow::rejected($identity, $parsed->asOf, $rawValues, $parsed->diagnostic ?? 'canonical_instrument_unresolved');
         }
 
         $batchIdentity = hash_file('sha256', $path);
         if ($batchIdentity === false) {
             throw new InvalidArgumentException('The XTB workbook cannot be hashed locally.');
         }
-        $this->importService->persist(new ImportBatch('xtb', $workbook->accountReference, $batchIdentity, $importedAt), $rows);
 
-        return new XtbImportResult($valid, $rejected);
+        return new XtbImportAnalysis($workbook->accountReference, $batchIdentity, $rows);
+    }
+
+    /** @param array<string, CanonicalInstrument> $explicitInstrumentMappings */
+    public function import(string $path, array $explicitInstrumentMappings, DateTimeImmutable $importedAt): XtbImportResult
+    {
+        $analysis = $this->analyze($path, $explicitInstrumentMappings);
+        $legacyRows = array_map(static function (PortfolioImportRow $row): PortfolioImportRow {
+            return $row->status === SourceRowStatus::Pending
+                ? PortfolioImportRow::rejected($row->sourceRowIdentity, $row->asOf, $row->rawValues, $row->diagnostic ?? 'canonical_instrument_unresolved')
+                : $row;
+        }, $analysis->rows);
+        $this->importService->persist(new ImportBatch('xtb', $analysis->accountReference, $analysis->batchIdentity, $importedAt), $legacyRows);
+        $summary = (new XtbImportAnalysis($analysis->accountReference, $analysis->batchIdentity, $legacyRows))->summary();
+
+        return new XtbImportResult($summary['valid'], $summary['rejected']);
     }
 }

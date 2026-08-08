@@ -1,8 +1,9 @@
 COMPOSE ?= docker compose
+TEST_COMPOSE = $(COMPOSE) -f docker-compose.test.yml
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-xtb-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
+.PHONY: up down restart logs build ps test test-postgresql test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
 
 up:
 	$(COMPOSE) up -d
@@ -22,8 +23,30 @@ build:
 ps:
 	$(COMPOSE) ps
 
-test:
-	$(COMPOSE) run --rm app php artisan test
+test: test-postgresql
+
+test-compose-isolation:
+	@set -eu; \
+	$(TEST_COMPOSE) config --format json | python3 -c 'import json, sys; config = json.load(sys.stdin); forbidden = "cloudflare_tunnel"; networks = config.get("networks", {}); services = config.get("services", {}); assert forbidden not in networks, f"test Compose declares forbidden network: {forbidden}"; assert all(forbidden not in (service.get("networks") or {}) for service in services.values()), f"test Compose attaches a service to forbidden network: {forbidden}"; assert networks and all(not network.get("external", False) for network in networks.values()), "test Compose must use only private networks"'
+
+test-postgresql: test-compose-isolation
+	@set -eu; \
+	project="felio-postgresql-test-$$$$"; \
+	cleanup() { \
+		status="$$?"; cleanup_status=0; \
+		if FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) down -v --remove-orphans; then :; else cleanup_status="$$?"; fi; \
+		if [ "$$cleanup_status" -eq 0 ] && { docker ps -aq --filter "label=com.docker.compose.project=$$project" | grep -q . || docker network inspect "$${project}_felio_test_net" >/dev/null 2>&1 || docker volume inspect "$${project}_postgres_data" >/dev/null 2>&1; }; then \
+			echo "Disposable test Compose resources remain for $$project" >&2; cleanup_status=1; \
+		fi; \
+		trap - EXIT; \
+		if [ "$$cleanup_status" -ne 0 ]; then exit "$$cleanup_status"; fi; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) up -d --wait db; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) build app; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) run --rm --no-deps app php vendor/bin/pest --configuration=phpunit.pgsql.xml
 
 test-fx:
 	$(COMPOSE) run --rm app php vendor/bin/pest tests/Unit/Fx
@@ -56,6 +79,25 @@ test-xtb-import:
 	$(COMPOSE) up -d db
 	$(COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force
 	$(COMPOSE) run --rm --no-deps app php vendor/bin/pest tests/Feature/Portfolio/XtbXlsxImportAdapterTest.php
+
+test-xtb-manual-import: test-compose-isolation
+	@set -eu; \
+	project="felio-xtb-manual-import-test-$$$$"; \
+	cleanup() { \
+		status="$$?"; cleanup_status=0; \
+		if FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) down -v --remove-orphans; then :; else cleanup_status="$$?"; fi; \
+		if [ "$$cleanup_status" -eq 0 ] && { docker ps -aq --filter "label=com.docker.compose.project=$$project" | grep -q . || docker network inspect "$${project}_felio_test_net" >/dev/null 2>&1 || docker volume inspect "$${project}_postgres_data" >/dev/null 2>&1; }; then \
+			echo "Disposable test Compose resources remain for $$project" >&2; cleanup_status=1; \
+		fi; \
+		trap - EXIT; \
+		if [ "$$cleanup_status" -ne 0 ]; then exit "$$cleanup_status"; fi; \
+		exit "$$status"; \
+	}; \
+	trap cleanup EXIT; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) up -d --wait db; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) build app; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) run --rm --no-deps app php vendor/bin/pest --configuration=phpunit.pgsql.xml tests/Feature/Portfolio/XtbImportDatabaseStateTest.php tests/Feature/Portfolio/XtbXlsxImportAdapterTest.php tests/Feature/Portfolio/XtbSanitizedFixturesTest.php tests/Feature/Portfolio/XtbManualImportWorkflowTest.php
 
 frontend:
 	$(COMPOSE) build app

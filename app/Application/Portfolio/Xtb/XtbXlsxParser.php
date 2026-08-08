@@ -12,6 +12,10 @@ use ZipArchive;
 
 final class XtbXlsxParser
 {
+    private const MAX_ARCHIVE_ENTRIES = 128;
+
+    private const MAX_UNCOMPRESSED_ARCHIVE_BYTES = 8 * 1024 * 1024;
+
     private const MAIN_NAMESPACE = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
 
     private const RELATIONSHIP_NAMESPACE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -28,6 +32,7 @@ final class XtbXlsxParser
         }
 
         try {
+            $this->assertArchiveIsWithinLimits($archive);
             $sharedStrings = $this->sharedStrings($archive);
             $sheets = $this->sheets($archive, $sharedStrings);
         } finally {
@@ -319,6 +324,26 @@ final class XtbXlsxParser
     private function nextColumn(string $column): string
     {
         return chr(ord($column) + 1);
+    }
+
+    private function assertArchiveIsWithinLimits(ZipArchive $archive): void
+    {
+        if ($archive->numFiles > self::MAX_ARCHIVE_ENTRIES) {
+            throw new InvalidArgumentException('The XTB workbook archive has too many entries.');
+        }
+
+        $uncompressedBytes = 0;
+        for ($index = 0; $index < $archive->numFiles; $index++) {
+            $stat = $archive->statIndex($index);
+            if ($stat === false || ! isset($stat['size']) || ! is_int($stat['size'])) {
+                throw new InvalidArgumentException('The XTB workbook archive metadata is invalid.');
+            }
+
+            $uncompressedBytes += $stat['size'];
+            if ($uncompressedBytes > self::MAX_UNCOMPRESSED_ARCHIVE_BYTES) {
+                throw new InvalidArgumentException('The XTB workbook archive exceeds the uncompressed size limit.');
+            }
+        }
     }
 
     private function xml(ZipArchive $archive, string $name): SimpleXMLElement

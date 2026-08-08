@@ -268,6 +268,46 @@ it('rejects otherwise valid cash trades without an explicit canonical mapping', 
         ->and(DB::table('portfolio_import_source_rows')->where('diagnostic', 'canonical_instrument_unresolved')->count())->toBe(2);
 });
 
+it('rejects XLSX archives with too many entries before reading XML content', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'xtb-too-many-entries-');
+    if ($path === false) {
+        throw new RuntimeException('Unable to create a sanitized XTB archive path.');
+    }
+
+    $archive = new ZipArchive;
+    $archive->open($path, ZipArchive::OVERWRITE);
+    for ($entry = 0; $entry <= 128; $entry++) {
+        $archive->addFromString('xl/filler-'.$entry.'.xml', 'x');
+    }
+    $archive->close();
+
+    try {
+        expect(fn (): XtbParsedWorkbook => (new XtbXlsxParser)->parse($path))
+            ->toThrow(InvalidArgumentException::class, 'too many entries');
+    } finally {
+        @unlink($path);
+    }
+});
+
+it('rejects XLSX archives whose declared uncompressed content exceeds the safety limit', function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'xtb-too-large-archive-');
+    if ($path === false) {
+        throw new RuntimeException('Unable to create a sanitized XTB archive path.');
+    }
+
+    $archive = new ZipArchive;
+    $archive->open($path, ZipArchive::OVERWRITE);
+    $archive->addFromString('xl/filler.xml', str_repeat('x', 8 * 1024 * 1024 + 1));
+    $archive->close();
+
+    try {
+        expect(fn (): XtbParsedWorkbook => (new XtbXlsxParser)->parse($path))
+            ->toThrow(InvalidArgumentException::class, 'uncompressed size limit');
+    } finally {
+        @unlink($path);
+    }
+});
+
 /** @param list<string> $products */
 function sanitizedXtbWorkbookWithCashProducts(array $products): string
 {

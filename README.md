@@ -67,7 +67,7 @@ make smoke-migrations
 make test
 ```
 
-This executes the Pest suite in the `app` Compose service. Build Vue assets when needed with `make frontend`.
+This runs the complete Pest suite against a unique disposable PostgreSQL Compose project and volume through `phpunit.pgsql.xml`; it does not touch the development database. Build Vue assets when needed with `make frontend`.
 
 ## Yahoo Finance market-data adapter
 
@@ -273,6 +273,22 @@ Run its PostgreSQL-backed coverage with:
 make test-xtb-import
 ```
 
+## XTB manual import workflow
+
+`POST /portfolio/imports/xtb` accepts only a local `.xlsx` upload, writes it only to private temporary storage, parses it without database persistence, and returns a `READY_FOR_CONFIRMATION` preview with `valid`, `pending`, and `rejected` aggregate diagnostics. The temporary workbook is deleted after confirmation or parsing failure; it is neither logged nor stored in PostgreSQL.
+
+`POST /portfolio/imports/xtb/{importId}/confirm` requires an explicit `{sourceSymbol: canonicalInstrument}` mapping payload before it processes the preview into the active XTB account. Rows with an unresolved but otherwise valid symbol are persisted as `pending`, while malformed/unsupported rows remain `rejected`; both preserve source sheet, row reference, and sanitized source values only after confirmation. Confirmation processing is idempotent through the workbook and source-row identities. The exposed workflow statuses are `UPLOADED`, `ANALYZING`, `READY_FOR_CONFIRMATION`, `CONFIRMED`, `PROCESSING`, `COMPLETED`, `COMPLETED_WITH_WARNINGS`, and `FAILED`; every confirmation-processing failure returns the complete lifecycle ending in `FAILED`, while persisted batches retain their completed status.
+
+`POST /portfolio/import-batches/{batchId}/reprocess` applies explicit mappings to pending rows already retained in a batch, so resolving them does not require another workbook upload. `DELETE /portfolio/import-batches/{batchId}` is batch-wide only: it records the earliest affected source timestamp in `portfolio_import_recalculation_boundaries`, removes the batch, and rebuilds the account's normalized position projection from the remaining valid rows. No automatic XTB sync, scheduler, dividend import, mapping guesswork, or valuation behavior is added.
+
+Run the focused Docker/PostgreSQL workflow test with:
+
+```sh
+make test-xtb-manual-import
+```
+
+This target creates a unique Compose project and PostgreSQL volume for each invocation, runs `migrate:fresh` only inside that disposable database, then removes the test project and volume on exit. It uses the standalone `docker-compose.test.yml`, which defines only the `app` and `db` services on a project-private bridge network; `make test-compose-isolation` inspects the resolved configuration and fails if `cloudflare_tunnel` or any external network is present. Pest is run with `phpunit.pgsql.xml`, and `XtbImportDatabaseStateTest` asserts `DB::getDriverName() === 'pgsql'`; a SQLite fallback therefore fails the focused command instead of silently passing. It never touches the development database.
+
 ## Portfolio valuation dashboard
 
 `GET /portfolio/valuation?date=YYYY-MM-DD` is an authorization-free local Inertia dashboard over the existing portfolio valuation read model. The `date` query parameter is required and is the exact valuation date; it never defaults to the current date. The backend supplies the integer PLN-grosze total, deterministic position rows, source price metadata, FX status, valuation availability, and all diagnostics. The Vue page only renders these values; it does not calculate money, select source data, or omit unavailable positions.
@@ -303,7 +319,8 @@ make restart          Restart the running Compose services.
 make logs             Follow Compose service logs.
 make build            Rebuild Compose images.
 make ps               Show Compose service status.
-make test               Run the Pest suite in the app container.
+make test               Run the complete suite in a disposable PostgreSQL Compose project.
+make test-postgresql    Run the complete suite in a disposable PostgreSQL Compose project.
 make test-fx            Run deterministic NBP Table-A FX adapter tests.
 make test-valuation     Run deterministic valuation arithmetic and availability tests.
 make test-fx-persistence Run focused FX snapshot persistence tests on PostgreSQL.
@@ -311,6 +328,8 @@ make test-market-data-persistence Run focused EOD persistence tests on PostgreSQ
 make test-portfolio-persistence Run focused portfolio import and position checks on PostgreSQL.
 make test-portfolio-valuation Run focused historical portfolio valuation read-model checks on PostgreSQL.
 make test-portfolio-dashboard Run focused Inertia dashboard route/view-model checks on PostgreSQL.
+make test-xtb-import       Run focused XTB parser/adapter persistence tests on PostgreSQL.
+make test-xtb-manual-import Run confirmation, pending reprocessing, and deletion-boundary tests on PostgreSQL.
 make frontend         Build the Vite frontend in the application image.
 make migrate          Apply pending Laravel migrations.
 make smoke-migrations Recreate and verify the baseline PostgreSQL migrations.

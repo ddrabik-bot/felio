@@ -31,12 +31,14 @@ final readonly class PortfolioImportRow
             if ($instrument === null || $quantity === null) {
                 throw new InvalidArgumentException('A valid source row requires canonical instrument and quantity.');
             }
-
             Decimal::positive($quantity, 'quantity');
-
             if ($diagnostic !== null) {
                 throw new InvalidArgumentException('A valid source row must not include a diagnostic.');
             }
+        }
+
+        if ($status === SourceRowStatus::Pending && ($instrument !== null || $quantity !== null || $averageCostPlnGrosze !== null || trim((string) $diagnostic) === '')) {
+            throw new InvalidArgumentException('A pending source row requires a diagnostic and cannot normalize a position.');
         }
 
         if ($status === SourceRowStatus::Rejected && ($instrument !== null || $quantity !== null || $averageCostPlnGrosze !== null || trim((string) $diagnostic) === '')) {
@@ -51,6 +53,12 @@ final readonly class PortfolioImportRow
     }
 
     /** @param array<string, mixed> $rawValues */
+    public static function pending(string $sourceRowIdentity, DateTimeImmutable $asOf, array $rawValues, string $diagnostic): self
+    {
+        return new self($sourceRowIdentity, SourceRowStatus::Pending, null, null, null, $asOf, $rawValues, $diagnostic);
+    }
+
+    /** @param array<string, mixed> $rawValues */
     public static function rejected(string $sourceRowIdentity, DateTimeImmutable $asOf, array $rawValues, string $diagnostic): self
     {
         return new self($sourceRowIdentity, SourceRowStatus::Rejected, null, null, null, $asOf, $rawValues, $diagnostic);
@@ -62,7 +70,6 @@ final readonly class PortfolioImportRow
         if (trim($sourceRowReference) === '') {
             throw new InvalidArgumentException('sourceRowReference must not be empty.');
         }
-
         self::assertRawValuesContainNoFloats($rawValues);
 
         return hash('sha256', $sourceRowReference."\x1f".self::canonicalJson($rawValues));
@@ -88,7 +95,6 @@ final readonly class PortfolioImportRow
             }
         }
         unset($value);
-
         try {
             return json_encode($values, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
         } catch (JsonException $exception) {

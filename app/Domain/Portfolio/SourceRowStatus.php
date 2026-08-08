@@ -5,5 +5,6 @@ namespace App\Domain\Portfolio;
 enum SourceRowStatus: string
 {
     case Valid = 'valid';
+    case Pending = 'pending';
     case Rejected = 'rejected';
 }

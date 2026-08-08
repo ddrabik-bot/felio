@@ -1,4 +1,4 @@
-name: felio
+name: ${FELIO_COMPOSE_PROJECT:-felio}
 
 services:
   app:
@@ -10,7 +10,7 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       APP_KEY: base64:Uu9pib5bVJrdUQJZ8OMO7pPqL3HP/3l4FiZNsWkubHY=
-      APP_URL: http://localhost:8086
+      APP_URL: http://localhost:${FELIO_HTTP_PORT:-8086}
       SESSION_DRIVER: file
       CACHE_STORE: file
       DB_CONNECTION: pgsql
@@ -30,7 +30,7 @@ services:
       context: .
       dockerfile: Dockerfile.nginx
     ports:
-      - "8086:80"
+      - "${FELIO_HTTP_PORT:-8086}:80"
     depends_on:
       - app
     networks:
@@ -93,15 +93,15 @@ services:
 
 volumes:
   node_modules:
-    name: felio_node_modules
+    name: ${FELIO_COMPOSE_PROJECT:-felio}_node_modules
   postgres_data:
-    name: felio_postgres_data
+    name: ${FELIO_COMPOSE_PROJECT:-felio}_postgres_data
   vendor:
-    name: felio_vendor
+    name: ${FELIO_COMPOSE_PROJECT:-felio}_vendor
 
 networks:
   felio_net:
-    name: felio_felio_net
+    name: ${FELIO_COMPOSE_PROJECT:-felio}_felio_net
     driver: bridge
   cloudflare_tunnel:
     external: true

@@ -16,6 +16,19 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*') || $request->is('portfolio/imports/*') || $request->is('portfolio/import-batches/*'),
         );
+        $exceptions->render(function (InvalidArgumentException $exception, Request $request) {
+            if ($request->is('portfolio/imports/*')) {
+                $statusHistory = $request->is('portfolio/imports/xtb')
+                    ? ['UPLOADED', 'ANALYZING', 'FAILED']
+                    : ['CONFIRMED', 'PROCESSING', 'FAILED'];
+
+                return response()->json([
+                    'status' => 'FAILED',
+                    'statusHistory' => $statusHistory,
+                    'errors' => ['workbook' => [$exception->getMessage()]],
+                ], 422);
+            }
+        });
     })->create();
