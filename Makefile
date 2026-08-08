@@ -33,14 +33,14 @@ test-postgresql: test-compose-isolation
 	@set -eu; \
 	project="felio-postgresql-test-$$$$"; \
 	cleanup() { \
-		status="$$?"; cleanup_status=0; \
+		test_status="$$?"; cleanup_status=0; \
 		if FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) down -v --remove-orphans; then :; else cleanup_status="$$?"; fi; \
 		if [ "$$cleanup_status" -eq 0 ] && { docker ps -aq --filter "label=com.docker.compose.project=$$project" | grep -q . || docker network inspect "$${project}_felio_test_net" >/dev/null 2>&1 || docker volume inspect "$${project}_postgres_data" >/dev/null 2>&1; }; then \
 			echo "Disposable test Compose resources remain for $$project" >&2; cleanup_status=1; \
 		fi; \
 		trap - EXIT; \
+		if [ "$$test_status" -ne 0 ]; then exit "$$test_status"; fi; \
 		if [ "$$cleanup_status" -ne 0 ]; then exit "$$cleanup_status"; fi; \
-		exit "$$status"; \
 	}; \
 	trap cleanup EXIT; \
 	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) up -d --wait db; \
@@ -84,14 +84,14 @@ test-xtb-manual-import: test-compose-isolation
 	@set -eu; \
 	project="felio-xtb-manual-import-test-$$$$"; \
 	cleanup() { \
-		status="$$?"; cleanup_status=0; \
+		test_status="$$?"; cleanup_status=0; \
 		if FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) down -v --remove-orphans; then :; else cleanup_status="$$?"; fi; \
 		if [ "$$cleanup_status" -eq 0 ] && { docker ps -aq --filter "label=com.docker.compose.project=$$project" | grep -q . || docker network inspect "$${project}_felio_test_net" >/dev/null 2>&1 || docker volume inspect "$${project}_postgres_data" >/dev/null 2>&1; }; then \
 			echo "Disposable test Compose resources remain for $$project" >&2; cleanup_status=1; \
 		fi; \
 		trap - EXIT; \
+		if [ "$$test_status" -ne 0 ]; then exit "$$test_status"; fi; \
 		if [ "$$cleanup_status" -ne 0 ]; then exit "$$cleanup_status"; fi; \
-		exit "$$status"; \
 	}; \
 	trap cleanup EXIT; \
 	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) up -d --wait db; \
