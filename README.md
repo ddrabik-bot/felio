@@ -301,7 +301,7 @@ This target creates a unique Compose project and PostgreSQL volume for each invo
 
 ## Portfolio valuation dashboard
 
-`GET /portfolio/valuation?date=YYYY-MM-DD` is an authorization-free local Inertia dashboard over the existing portfolio valuation read model. The `date` query parameter is required and is the exact valuation date; it never defaults to the current date. The backend supplies the integer PLN-grosze total, deterministic position rows, source price metadata, FX status, valuation availability, and all diagnostics. The Vue page only renders these values; it does not calculate money, select source data, or omit unavailable positions.
+`GET /portfolio/valuation?date=YYYY-MM-DD` is an authenticated local Inertia dashboard over the existing portfolio valuation read model. It scopes every valuation read to the authenticated user's active portfolio account, so positions from other accounts or users are excluded. The `date` query parameter is required and is the exact valuation date; it never defaults to the current date. The backend supplies the integer PLN-grosze total, deterministic position rows, source price metadata, FX status, valuation availability, and all diagnostics. The Vue page only renders these values; it does not calculate money, select source data, or omit unavailable positions.
 
 The page renders accessible loading, empty, error, and tabular ready states. It displays unavailable price/value cells and stale or unavailable FX diagnostics explicitly. Build the client assets through the app image and run the focused route/view-model coverage with:
 
