@@ -3,7 +3,7 @@ TEST_COMPOSE = $(COMPOSE) -f docker-compose.test.yml
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test test-postgresql test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
+.PHONY: up down restart logs build ps test test-postgresql test-auth test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
 
 up:
 	$(COMPOSE) up -d
@@ -24,6 +24,25 @@ ps:
 	$(COMPOSE) ps
 
 test: test-postgresql
+
+test-auth: test-compose-isolation
+	@set -eu; \
+	project="felio-auth-test-$$$$"; \
+	cleanup() { \
+		test_status="$$?"; cleanup_status=0; \
+		if FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) down -v --remove-orphans; then :; else cleanup_status="$$?"; fi; \
+		if [ "$$cleanup_status" -eq 0 ] && { docker ps -aq --filter "label=com.docker.compose.project=$$project" | grep -q . || docker network inspect "$${project}_felio_test_net" >/dev/null 2>&1 || docker volume inspect "$${project}_postgres_data" >/dev/null 2>&1; }; then \
+			echo "Disposable test Compose resources remain for $$project" >&2; cleanup_status=1; \
+		fi; \
+		trap - EXIT; \
+		if [ "$$test_status" -ne 0 ]; then exit "$$test_status"; fi; \
+		if [ "$$cleanup_status" -ne 0 ]; then exit "$$cleanup_status"; fi; \
+	}; \
+	trap cleanup EXIT; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) up -d --wait db; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) build app; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force; \
+	FELIO_COMPOSE_PROJECT="$$project" $(TEST_COMPOSE) run --rm --no-deps app php vendor/bin/pest --configuration=phpunit.pgsql.xml tests/Feature/Auth
 
 test-compose-isolation:
 	@set -eu; \

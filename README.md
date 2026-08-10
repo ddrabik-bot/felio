@@ -69,6 +69,16 @@ make test
 
 This runs the complete Pest suite against a unique disposable PostgreSQL Compose project and volume through `phpunit.pgsql.xml`; it does not touch the development database. Build Vue assets when needed with `make frontend`.
 
+## Session authentication
+
+Public session authentication is available through Inertia pages at `/register`, `/login`, and `/forgot-password`. Registration creates a password-hashed user and starts a regenerated session; login and logout use Laravel's `web` session guard. Password reset links use Laravel's reset-token broker and are delivered through the configured mailer (the test environment uses Laravel's array mailer). Authentication does not persist uploaded workbooks or alter the existing portfolio-import workflow.
+
+Run focused authentication coverage against an isolated disposable PostgreSQL Compose project with:
+
+```sh
+make test-auth
+```
+
 ## Yahoo Finance market-data adapter
 
 `YahooFinanceMarketDataProvider` is the first concrete implementation of the
@@ -321,6 +331,7 @@ make build            Rebuild Compose images.
 make ps               Show Compose service status.
 make test               Run the complete suite in a disposable PostgreSQL Compose project.
 make test-postgresql    Run the complete suite in a disposable PostgreSQL Compose project.
+make test-auth          Run registration, session login/logout, and password reset coverage in disposable PostgreSQL.
 make test-fx            Run deterministic NBP Table-A FX adapter tests.
 make test-valuation     Run deterministic valuation arithmetic and availability tests.
 make test-fx-persistence Run focused FX snapshot persistence tests on PostgreSQL.
