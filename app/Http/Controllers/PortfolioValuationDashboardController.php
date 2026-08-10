@@ -6,6 +6,7 @@ use App\Application\Portfolio\PortfolioValuationRow;
 use App\Application\Portfolio\PortfolioValuationService;
 use DateTimeImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,10 +18,20 @@ final class PortfolioValuationDashboardController extends Controller
             'date' => ['required', 'date_format:Y-m-d'],
         ]);
         $valuationDate = new DateTimeImmutable($validated['date'].'T23:59:59+00:00');
-        $valuation = $valuationService->read($valuationDate);
+        $activePortfolio = DB::table('portfolio_accounts')
+            ->where('user_id', $request->user()->id)
+            ->where('is_active', true)
+            ->first();
+        abort_unless($activePortfolio, 422, 'Select an active portfolio first.');
+        $valuation = $valuationService->read($valuationDate, $activePortfolio->id);
 
         return Inertia::render('Portfolio/ValuationDashboard', [
             'valuationDate' => $valuation->valuationDate->format('Y-m-d'),
+            'activePortfolio' => [
+                'id' => $activePortfolio->id,
+                'broker' => $activePortfolio->broker,
+                'accountReference' => $activePortfolio->account_reference,
+            ],
             'totalPlnGrosze' => (string) $valuation->totalPlnGrosze,
             'state' => $valuation->rows === [] ? 'empty' : 'ready',
             'error' => null,

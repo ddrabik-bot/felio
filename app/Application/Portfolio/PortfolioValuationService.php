@@ -16,12 +16,12 @@ final readonly class PortfolioValuationService
         private ValuationService $valuationService,
     ) {}
 
-    public function read(DateTimeImmutable $valuationDate): PortfolioValuationReadModel
+    public function read(DateTimeImmutable $valuationDate, int $portfolioAccountId): PortfolioValuationReadModel
     {
         $rows = [];
         $totalPlnGrosze = 0;
 
-        foreach ($this->repository->positionsAsOf($valuationDate) as $position) {
+        foreach ($this->repository->positionsAsOf($valuationDate, $portfolioAccountId) as $position) {
             $price = $this->repository->priceFor($position->canonicalInstrument, $valuationDate);
             $fxRate = $price->currency === 'PLN' ? null : $this->repository->fxRateFor($price->currency, $valuationDate);
             $result = $this->valuationService->value(new ValuationInput($position->quantity, $price, $fxRate));

@@ -33,12 +33,20 @@ function valuation(StaleFxRatePolicy $policy = StaleFxRatePolicy::Reject): Portf
     return new PortfolioValuationService(app(PortfolioValuationReadRepository::class), new ValuationService($policy));
 }
 
+function valuationAccountId(): int
+{
+    return (int) DB::table('portfolio_accounts')
+        ->where('broker', 'xtb')
+        ->where('account_reference', 'valuation-account')
+        ->value('id');
+}
+
 it('reads a historical source-row position as of an explicit date after a later import overwrites the current projection', function (): void {
     importPosition('batch-one', '2026-01-02T00:00:00+01:00', 'PZU.PL', '2');
     importPosition('batch-two', '2026-01-03T00:00:00+01:00', 'PZU.PL', '5');
     price('PZU.PL', '2026-01-02', 'PLN', '10');
 
-    $read = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'));
+    $read = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'), valuationAccountId());
 
     expect(DB::table('portfolio_positions')->value('quantity'))->toBe('5')
         ->and($read->rows)->toHaveCount(1)
@@ -51,7 +59,7 @@ it('uses only exact-date market and FX observations and preserves unavailable di
     importPosition('foreign', '2026-01-02T00:00:00+01:00', 'ACME.US', '3');
     price('ACME.US', '2026-01-02', 'USD', '10');
 
-    $read = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'));
+    $read = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'), valuationAccountId());
 
     expect($read->rows[0]->plnGrosze)->toBeNull()
         ->and($read->rows[0]->diagnostics)->toContain('fx_rate_missing')
@@ -62,8 +70,8 @@ it('applies stale FX policy and rejects ambiguous exact-date prices deterministi
     importPosition('stale', '2026-01-02T00:00:00+01:00', 'OTLK.US', '2');
     price('OTLK.US', '2026-01-02', 'USD', '5');
     fx('USD', '2026-01-02', 'stale', '4', 'one');
-    $rejected = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'));
-    $accepted = valuation(StaleFxRatePolicy::Accept)->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'));
+    $rejected = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'), valuationAccountId());
+    $accepted = valuation(StaleFxRatePolicy::Accept)->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'), valuationAccountId());
 
     expect($rejected->rows[0]->plnGrosze)->toBeNull()
         ->and($rejected->rows[0]->diagnostics)->toContain('fx_rate_stale_rejected:source_stale')
@@ -77,5 +85,5 @@ it('rejects checked portfolio totals that would overflow PHP integers', function
     price('AAA.PL', '2026-01-02', 'PLN', '92233720368547758.07');
     price('BBB.PL', '2026-01-02', 'PLN', '0.01');
 
-    expect(fn () => valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00')))->toThrow(OverflowException::class, 'Portfolio PLN grosze total exceeds PHP integer range.');
+    expect(fn () => valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'), valuationAccountId()))->toThrow(OverflowException::class, 'Portfolio PLN grosze total exceeds PHP integer range.');
 });

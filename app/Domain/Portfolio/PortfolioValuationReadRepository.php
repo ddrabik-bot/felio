@@ -9,7 +9,7 @@ use DateTimeImmutable;
 interface PortfolioValuationReadRepository
 {
     /** @return list<PortfolioValuationPosition> */
-    public function positionsAsOf(DateTimeImmutable $valuationDate): array;
+    public function positionsAsOf(DateTimeImmutable $valuationDate, int $portfolioAccountId): array;
 
     public function priceFor(string $canonicalInstrument, DateTimeImmutable $valuationDate): PriceQuote;
 

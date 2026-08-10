@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use App\Domain\MarketData\CanonicalInstrument;
 use App\Domain\Portfolio\ImportBatch;
 use App\Domain\Portfolio\PortfolioImportRow;
@@ -9,6 +10,19 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
 
 uses(DatabaseMigrations::class);
+
+beforeEach(function (): void {
+    $user = User::factory()->create();
+    DB::table('portfolio_accounts')->insert([
+        'user_id' => $user->id,
+        'broker' => 'xtb',
+        'account_reference' => 'dashboard-account',
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $this->actingAs($user);
+});
 
 function dashboardImportPosition(string $batch, string $asOf, string $instrument, string $quantity): void
 {
@@ -67,7 +81,7 @@ function dashboardFx(string $currency, string $date, string $availability, ?stri
     ]);
 }
 
-it('renders an authorization-free dashboard for an explicit valuation date', function (): void {
+it('renders an authenticated dashboard for an explicit valuation date', function (): void {
     dashboardImportPosition('dashboard-pzu', '2026-01-02T00:00:00+01:00', 'PZU.PL', '2');
     dashboardPrice('PZU.PL', '2026-01-02', 'PLN', '10');
 

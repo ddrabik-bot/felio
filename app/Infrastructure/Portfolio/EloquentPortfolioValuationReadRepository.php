@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 final class EloquentPortfolioValuationReadRepository implements PortfolioValuationReadRepository
 {
     /** @return list<PortfolioValuationPosition> */
-    public function positionsAsOf(DateTimeImmutable $valuationDate): array
+    public function positionsAsOf(DateTimeImmutable $valuationDate, int $portfolioAccountId): array
     {
         $asOf = $valuationDate->format('Y-m-d').'T23:59:59+00:00';
         $rows = DB::table('portfolio_import_source_rows as rows')
@@ -22,6 +22,7 @@ final class EloquentPortfolioValuationReadRepository implements PortfolioValuati
             ->select(['rows.id', 'batches.portfolio_account_id', 'rows.canonical_instrument', 'rows.quantity', 'rows.as_of', 'batches.imported_at', 'batches.id as batch_id'])
             ->where('rows.status', 'valid')
             ->whereNotNull('rows.canonical_instrument')
+            ->where('batches.portfolio_account_id', $portfolioAccountId)
             ->where('rows.as_of', '<=', $asOf)
             ->orderBy('batches.portfolio_account_id')
             ->orderBy('rows.canonical_instrument')

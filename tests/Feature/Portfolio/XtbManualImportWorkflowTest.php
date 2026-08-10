@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Http\UploadedFile;
@@ -11,6 +12,16 @@ uses(DatabaseMigrations::class);
 
 beforeEach(function (): void {
     $this->withoutMiddleware(PreventRequestForgery::class);
+    $user = User::factory()->create();
+    $this->activePortfolioId = DB::table('portfolio_accounts')->insertGetId([
+        'user_id' => $user->id,
+        'broker' => 'xtb',
+        'account_reference' => 'XTB-SYNTHETIC-001',
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $this->actingAs($user);
 });
 
 it('invokes a complete XTB import from a fixture through the HTTP contract in one call', function (): void {
@@ -161,6 +172,8 @@ it('rejects a forged draft path without deleting another local-storage file', fu
     $this->withSession([
         'xtb_import_draft:'.$importId => [
             'path' => $protectedPath,
+            'portfolioAccountId' => $this->activePortfolioId,
+            'statusHistory' => ['UPLOADED', 'ANALYZING', 'READY_FOR_CONFIRMATION'],
         ],
     ])->postJson("/portfolio/imports/xtb/{$importId}/confirm", ['mappings' => ['PZU' => 'PZU.PL']])
         ->assertUnprocessable()

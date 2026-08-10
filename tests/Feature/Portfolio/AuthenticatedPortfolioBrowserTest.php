@@ -37,6 +37,19 @@ it('renders an authenticated import screen with the user active portfolio', func
         );
 });
 
+it('binds the valuation dashboard to the authenticated user active portfolio', function (): void {
+    $user = User::factory()->create();
+    $accountId = activePortfolioFor($user, 'XTB-SYNTHETIC-001');
+
+    $this->actingAs($user)->get('/portfolio/valuation?date=2026-01-02')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Portfolio/ValuationDashboard', false)
+            ->where('activePortfolio.id', $accountId)
+            ->where('activePortfolio.accountReference', 'XTB-SYNTHETIC-001')
+        );
+});
+
 it('keeps the browser upload preview confirmation and batches inside the active portfolio', function (): void {
     Storage::fake('local');
     $user = User::factory()->create();
