@@ -42,7 +42,7 @@ jobs:
         run: docker compose run --rm app php artisan migrate --force
 
       - name: Run Pest
-        run: docker compose run --rm app php artisan test
+        run: docker compose run --rm -e APP_ENV=testing app php vendor/bin/pest --configuration=phpunit.pgsql.xml
 
       - name: Install locked frontend dependencies
         run: docker compose run --rm node npm ci
