@@ -6,6 +6,7 @@ use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Symfony\Component\Process\Process;
 
 uses(DatabaseMigrations::class);
 
@@ -35,6 +36,105 @@ it('renders an authenticated import screen with the user active portfolio', func
             ->has('portfolios', 1)
             ->has('batches', 0)
         );
+});
+
+it('onboards a registered user into an active XTB portfolio before the browser import flow', function (): void {
+    Storage::fake('local');
+
+    $this->post('/register', [
+        'name' => 'Portfolio owner',
+        'email' => 'portfolio-owner@example.test',
+        'password' => 'correct-horse-battery-staple',
+        'password_confirmation' => 'correct-horse-battery-staple',
+    ])->assertRedirect('/portfolio/onboarding');
+
+    $this->get('/portfolio/onboarding')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page->component('Portfolio/Onboarding', false));
+
+    $this->post('/portfolio/onboarding', ['accountReference' => 'XTB-SYNTHETIC-001'])
+        ->assertRedirect('/portfolio/imports/xtb');
+
+    $user = User::query()->where('email', 'portfolio-owner@example.test')->sole();
+    expect(DB::table('portfolio_accounts')->where('user_id', $user->id)->where('broker', 'xtb')->where('account_reference', 'XTB-SYNTHETIC-001')->where('is_active', true)->exists())->toBeTrue();
+
+    $upload = $this->postJson('/portfolio/imports/xtb', ['workbook' => sanitizedXtbUpload()]);
+    $upload->assertCreated()
+        ->assertJsonPath('summary.pending', 2)
+        ->assertJsonPath('rows.0.status', 'pending')
+        ->assertJsonPath('rows.0.sourceSymbol', 'PZU')
+        ->assertJsonPath('rows.2.status', 'rejected');
+
+    $this->postJson('/portfolio/imports/xtb/'.$upload->json('importId').'/confirm', ['mappings' => ['PZU' => 'PZU.PL']])
+        ->assertOk()
+        ->assertJsonPath('summary.valid', 2)
+        ->assertJsonPath('summary.pending', 0);
+});
+
+it('keeps exactly one active portfolio when PostgreSQL onboarding requests race', function (): void {
+    expect(DB::getDriverName())->toBe('pgsql');
+
+    $user = User::factory()->create();
+    $barrier = tempnam(sys_get_temp_dir(), 'felio-portfolio-onboarding-');
+    unlink($barrier);
+    $worker = base_path('tests/Fixtures/Portfolio/OnboardPortfolioWorker.php');
+    $processes = array_map(
+        static fn (int $workerNumber): Process => new Process([
+            PHP_BINARY,
+            $worker,
+            (string) $user->id,
+            'XTB-CONCURRENT-'.$workerNumber.'-'.bin2hex(random_bytes(4)),
+            $barrier,
+        ], base_path()),
+        range(1, 4),
+    );
+
+    try {
+        foreach ($processes as $process) {
+            $process->start();
+        }
+
+        $deadline = microtime(true) + 10;
+        while (count(glob("{$barrier}.*.ready")) !== count($processes) && microtime(true) < $deadline) {
+            usleep(10_000);
+        }
+
+        expect(glob("{$barrier}.*.ready"))->toHaveCount(count($processes));
+        touch($barrier);
+
+        foreach ($processes as $process) {
+            $process->wait();
+            expect($process->getExitCode(), $process->getErrorOutput())->toBe(0);
+        }
+
+        expect(DB::table('portfolio_accounts')->where('user_id', $user->id)->where('is_active', true)->count())->toBe(1);
+    } finally {
+        touch($barrier);
+
+        foreach ($processes as $process) {
+            if ($process->isRunning()) {
+                $process->stop();
+            }
+        }
+
+        foreach (glob("{$barrier}*") as $path) {
+            unlink($path);
+        }
+    }
+});
+
+it('ships a browser import component that includes the Laravel CSRF token on every state-changing fetch, uses a native tokenized logout form, and submits selected mappings', function (): void {
+    $component = file_get_contents(resource_path('js/Pages/Portfolio/XtbImport.vue'));
+
+    expect($component)
+        ->toContain("document.querySelector('meta[name=\"csrf-token\"]')")
+        ->toContain("'X-CSRF-TOKEN': csrfToken")
+        ->toContain('JSON.stringify({ mappings: selectedMappings() })')
+        ->toContain('action="/logout" method="post"')
+        ->toContain('name="_token" :value="csrfToken"')
+        ->not->toContain('@submit.prevent="logout"')
+        ->toContain('preview.rows')
+        ->toContain('mappingSymbols');
 });
 
 it('binds the valuation dashboard to the authenticated user active portfolio', function (): void {

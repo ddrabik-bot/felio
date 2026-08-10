@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\PortfolioOnboardingController;
 use App\Http\Controllers\PortfolioValuationDashboardController;
 use App\Http\Controllers\XtbManualImportController;
 use Illuminate\Support\Facades\Route;
@@ -21,6 +22,8 @@ Route::middleware('guest')->group(function (): void {
 });
 Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->middleware('auth')->name('logout');
 Route::middleware('auth')->prefix('portfolio')->group(function (): void {
+    Route::get('/onboarding', [PortfolioOnboardingController::class, 'create']);
+    Route::post('/onboarding', [PortfolioOnboardingController::class, 'store']);
     Route::get('/valuation', PortfolioValuationDashboardController::class);
     Route::get('/imports/xtb', [XtbManualImportController::class, 'index']);
     Route::post('/imports/xtb', [XtbManualImportController::class, 'upload']);

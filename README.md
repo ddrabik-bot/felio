@@ -71,7 +71,7 @@ This runs the complete Pest suite against a unique disposable PostgreSQL Compose
 
 ## Session authentication
 
-Public session authentication is available through Inertia pages at `/register`, `/login`, and `/forgot-password`. Registration creates a password-hashed user and starts a regenerated session; login and logout use Laravel's `web` session guard. Password reset links use Laravel's reset-token broker and are delivered through the configured mailer (the test environment uses Laravel's array mailer). Authentication does not persist uploaded workbooks or alter the existing portfolio-import workflow.
+Public session authentication is available through Inertia pages at `/register`, `/login`, and `/forgot-password`. Registration creates a password-hashed user, starts a regenerated session, and redirects to `/portfolio/onboarding`, where the authenticated user creates their active XTB account before visiting the import or valuation pages. The onboarding endpoint scopes the created account to the authenticated user and does not expose other users' portfolios. Login and logout use Laravel's `web` session guard. Password reset links use Laravel's reset-token broker and are delivered through the configured mailer (the test environment uses Laravel's array mailer). Authentication does not persist uploaded workbooks or alter the existing portfolio-import workflow.
 
 Run focused authentication coverage against an isolated disposable PostgreSQL Compose project with:
 

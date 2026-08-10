@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Application\Portfolio\Xtb\XtbManualImportWorkflow;
+use App\Domain\Portfolio\PortfolioImportRow;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,7 @@ use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use InvalidArgumentException;
+use Throwable;
 
 final class XtbManualImportController extends Controller
 {
@@ -36,7 +38,7 @@ final class XtbManualImportController extends Controller
         $path = $request->file('workbook')->storeAs('xtb-imports', $importId.'.xlsx', 'local');
         try {
             $analysis = $workflow->analyze(Storage::disk('local')->path($path));
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             Storage::disk('local')->delete($path);
             throw $exception;
         }
@@ -47,7 +49,14 @@ final class XtbManualImportController extends Controller
         $statusHistory = ['UPLOADED', 'ANALYZING', 'READY_FOR_CONFIRMATION'];
         $request->session()->put($this->key($importId), compact('path', 'statusHistory') + ['portfolioAccountId' => $active->id]);
 
-        return response()->json(['importId' => $importId, 'status' => 'READY_FOR_CONFIRMATION', 'statusHistory' => $statusHistory, 'summary' => $analysis->summary(), 'activePortfolio' => $this->portfolio($active)], 201);
+        return response()->json([
+            'importId' => $importId,
+            'status' => 'READY_FOR_CONFIRMATION',
+            'statusHistory' => $statusHistory,
+            'summary' => $analysis->summary(),
+            'rows' => array_map($this->previewRow(...), $analysis->rows),
+            'activePortfolio' => $this->portfolio($active),
+        ], 201);
     }
 
     public function confirm(Request $request, string $importId, XtbManualImportWorkflow $workflow): JsonResponse
@@ -71,7 +80,7 @@ final class XtbManualImportController extends Controller
         $statusHistory = [...$statusHistory, 'CONFIRMED', 'PROCESSING'];
         try {
             $result = $workflow->confirm($draft['path'], $request->input('mappings', []));
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             return response()->json(['status' => 'FAILED', 'statusHistory' => [...$statusHistory, 'FAILED'], 'errors' => ['workbook' => [$exception instanceof InvalidArgumentException ? $exception->getMessage() : 'The XTB workbook could not be processed.']]], $exception instanceof InvalidArgumentException ? 422 : 500);
         }
         $result['statusHistory'] = [...$statusHistory, $result['status']];
@@ -127,6 +136,28 @@ final class XtbManualImportController extends Controller
     private function portfolio(object $account): array
     {
         return ['id' => $account->id, 'broker' => $account->broker, 'accountReference' => $account->account_reference, 'isActive' => (bool) $account->is_active];
+    }
+
+    /** @return array{status: string, sourceSymbol: ?string, sourceRowReference: ?string, operation: ?string, quantity: ?string, asOf: string, canonicalInstrument: ?string, diagnostic: ?string} */
+    private function previewRow(PortfolioImportRow $row): array
+    {
+        return [
+            'status' => $row->status->value,
+            'sourceSymbol' => $this->rawString($row, 'xtb_symbol'),
+            'sourceRowReference' => $this->rawString($row, 'source_row_reference'),
+            'operation' => $this->rawString($row, 'xtb_operation'),
+            'quantity' => $this->rawString($row, 'xtb_quantity'),
+            'asOf' => $row->asOf->format(DATE_ATOM),
+            'canonicalInstrument' => $row->instrument?->value,
+            'diagnostic' => $row->diagnostic,
+        ];
+    }
+
+    private function rawString(PortfolioImportRow $row, string $key): ?string
+    {
+        $value = $row->rawValues[$key] ?? null;
+
+        return is_string($value) ? $value : null;
     }
 
     private function key(string $importId): string

@@ -12,7 +12,7 @@ it('registers a user with an email and password then authenticates the session',
         'email' => 'daniel@example.test',
         'password' => 'correct-horse-battery-staple',
         'password_confirmation' => 'correct-horse-battery-staple',
-    ])->assertRedirect('/');
+    ])->assertRedirect('/portfolio/onboarding');
 
     $user = User::query()->where('email', 'daniel@example.test')->sole();
 

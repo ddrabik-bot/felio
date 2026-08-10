@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Application\Portfolio\PortfolioValuationRow;
 use App\Application\Portfolio\PortfolioValuationService;
 use DateTimeImmutable;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -12,7 +13,7 @@ use Inertia\Response;
 
 final class PortfolioValuationDashboardController extends Controller
 {
-    public function __invoke(Request $request, PortfolioValuationService $valuationService): Response
+    public function __invoke(Request $request, PortfolioValuationService $valuationService): Response|RedirectResponse
     {
         $validated = $request->validate([
             'date' => ['required', 'date_format:Y-m-d'],
@@ -22,7 +23,9 @@ final class PortfolioValuationDashboardController extends Controller
             ->where('user_id', $request->user()->id)
             ->where('is_active', true)
             ->first();
-        abort_unless($activePortfolio, 422, 'Select an active portfolio first.');
+        if ($activePortfolio === null) {
+            return redirect('/portfolio/onboarding');
+        }
         $valuation = $valuationService->read($valuationDate, $activePortfolio->id);
 
         return Inertia::render('Portfolio/ValuationDashboard', [

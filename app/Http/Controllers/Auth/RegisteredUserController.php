@@ -31,6 +31,6 @@ final class RegisteredUserController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        return redirect('/');
+        return redirect('/portfolio/onboarding');
     }
 }
