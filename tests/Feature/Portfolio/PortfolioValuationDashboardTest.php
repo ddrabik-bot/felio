@@ -1,10 +1,10 @@
 <?php
 
-use App\Models\User;
 use App\Domain\MarketData\CanonicalInstrument;
 use App\Domain\Portfolio\ImportBatch;
 use App\Domain\Portfolio\PortfolioImportRow;
 use App\Domain\Portfolio\PortfolioImportService;
+use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -24,9 +24,9 @@ beforeEach(function (): void {
     $this->actingAs($user);
 });
 
-function dashboardImportPosition(string $batch, string $asOf, string $instrument, string $quantity): void
+function dashboardImportPosition(string $batch, string $asOf, string $instrument, string $quantity, string $accountReference = 'dashboard-account'): void
 {
-    app(PortfolioImportService::class)->persist(new ImportBatch('xtb', 'dashboard-account', $batch, new DateTimeImmutable($asOf)), [
+    app(PortfolioImportService::class)->persist(new ImportBatch('xtb', $accountReference, $batch, new DateTimeImmutable($asOf)), [
         PortfolioImportRow::valid("{$batch}-{$instrument}", new CanonicalInstrument($instrument), $quantity, null, new DateTimeImmutable($asOf), ['instrument' => $instrument, 'quantity' => $quantity]),
     ]);
 }
@@ -100,6 +100,31 @@ it('renders an authenticated dashboard for an explicit valuation date', function
             ->where('positions.0.sourcePrice.currency', 'PLN')
             ->where('positions.0.fx.status', 'not_required')
             ->where('positions.0.plnGrosze', 2000)
+        );
+});
+
+it('excludes positions owned by another user account from the active portfolio valuation', function (): void {
+    dashboardImportPosition('dashboard-owned', '2026-01-02T00:00:00+01:00', 'PZU.PL', '2');
+    dashboardPrice('PZU.PL', '2026-01-02', 'PLN', '10');
+
+    $otherUser = User::factory()->create();
+    DB::table('portfolio_accounts')->insert([
+        'user_id' => $otherUser->id,
+        'broker' => 'xtb',
+        'account_reference' => 'dashboard-other-user-account',
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    dashboardImportPosition('dashboard-other-user', '2026-01-02T00:00:00+01:00', 'OTHER.PL', '9', 'dashboard-other-user-account');
+    dashboardPrice('OTHER.PL', '2026-01-02', 'PLN', '10');
+
+    $this->get('/portfolio/valuation?date=2026-01-02')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totalPlnGrosze', '2000')
+            ->has('positions', 1)
+            ->where('positions.0.instrument', 'PZU.PL')
         );
 });
 

@@ -78,6 +78,32 @@ it('keeps the browser upload preview confirmation and batches inside the active 
         );
 });
 
+it('cleans up a pending workbook when the active portfolio changes before confirmation', function (): void {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $firstAccountId = activePortfolioFor($user, 'XTB-SYNTHETIC-001');
+
+    $upload = $this->actingAs($user)->postJson('/portfolio/imports/xtb', ['workbook' => sanitizedXtbUpload()]);
+    $importId = $upload->json('importId');
+    expect($importId)->toBeString();
+    Storage::disk('local')->assertExists('xtb-imports/'.$importId.'.xlsx');
+
+    DB::table('portfolio_accounts')->where('id', $firstAccountId)->update(['is_active' => false]);
+    DB::table('portfolio_accounts')->insert([
+        'user_id' => $user->id,
+        'broker' => 'xtb',
+        'account_reference' => 'XTB-SYNTHETIC-002',
+        'is_active' => true,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->actingAs($user)->postJson('/portfolio/imports/xtb/'.$importId.'/confirm', ['mappings' => []])
+        ->assertUnprocessable();
+
+    Storage::disk('local')->assertMissing('xtb-imports/'.$importId.'.xlsx');
+});
+
 it('does not expose another user batches to destroy or reprocess', function (): void {
     $owner = User::factory()->create();
     $ownerAccountId = activePortfolioFor($owner, 'XTB-SYNTHETIC-001');
