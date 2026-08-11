@@ -5,8 +5,29 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Inertia\Inertia;
 
 uses(DatabaseMigrations::class);
+
+it('shares failed login errors with the redirected Inertia page', function (): void {
+    $this->from('/login')->post('/login', [
+        'email' => 'unknown@example.test',
+        'password' => 'correct-horse-battery-staple',
+    ])->assertRedirect('/login');
+
+    $this->withHeaders([
+        'X-Inertia' => 'true',
+        'X-Inertia-Version' => Inertia::getVersion(),
+    ])->get('/login')
+        ->assertOk()
+        ->assertHeader('X-Inertia', 'true')
+        ->assertJsonStructure([
+            'component',
+            'props' => ['errors' => ['email']],
+            'url',
+            'version',
+        ]);
+});
 
 it('logs a registered user in and invalidates the session on logout', function (): void {
     $user = User::factory()->create([
