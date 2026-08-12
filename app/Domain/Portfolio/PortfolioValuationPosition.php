@@ -9,5 +9,6 @@ final readonly class PortfolioValuationPosition
         public int $accountId,
         public string $canonicalInstrument,
         public string $quantity,
+        public ?int $averageCostPlnGrosze,
     ) {}
 }

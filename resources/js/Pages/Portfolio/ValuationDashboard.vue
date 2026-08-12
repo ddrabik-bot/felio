@@ -1,72 +1,35 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { Doughnut, Line } from 'vue-chartjs';
+import { ArcElement, CategoryScale, Chart as ChartJS, Legend, LineElement, LinearScale, PointElement, Tooltip } from 'chart.js';
 
-const props = defineProps({
-    valuationDate: { type: String, required: true },
-    totalPlnGrosze: { type: String, required: true },
-    state: { type: String, required: true },
-    error: { type: String, default: null },
-    positions: { type: Array, required: true },
-});
-
-const isLoading = ref(false);
-const displayState = computed(() => (isLoading.value ? 'loading' : props.state));
+ChartJS.register(ArcElement, CategoryScale, Legend, LineElement, LinearScale, PointElement, Tooltip);
+const props = defineProps({ valuationDate: String, totalPlnGrosze: String, state: String, error: { default: null }, positions: Array, history: { default: () => [] }, allocation: Object, kpis: Object, range: String });
+const ranges = ['1D', 'WTD', 'MTD', '1M', '3M', 'YTD', 'MAX'];
+const MAX_SAFE_INTEGER = String(Number.MAX_SAFE_INTEGER);
+const isSafeIntegerString = (value) => typeof value === 'string' && /^\d+$/.test(value) && (value.length < MAX_SAFE_INTEGER.length || (value.length === MAX_SAFE_INTEGER.length && value <= MAX_SAFE_INTEGER));
+const safeInteger = (value) => isSafeIntegerString(value) ? Number(value) : null;
+const availableHistory = computed(() => props.history.filter((point) => point.availability === 'available' && safeInteger(point.totalPlnGrosze) !== null));
+const valueChartData = computed(() => ({ labels: availableHistory.value.map((point) => point.date), datasets: [{ label: 'Value (PLN grosze)', data: availableHistory.value.map((point) => safeInteger(point.totalPlnGrosze)), borderColor: '#0f766e', backgroundColor: '#ccfbf1', tension: 0.2 }] }));
+const assetClassChartItems = computed(() => props.allocation.byAssetClass.filter((item) => safeInteger(item.valuePlnGrosze) !== null));
+const allocationChartData = computed(() => ({ labels: assetClassChartItems.value.map((item) => item.assetClass), datasets: [{ data: assetClassChartItems.value.map((item) => safeInteger(item.valuePlnGrosze)), backgroundColor: ['#0f766e', '#2563eb', '#9333ea', '#ea580c', '#64748b'] }] }));
+const allocationTotal = computed(() => props.allocation.byHolding.reduce((total, item) => total + Number(item.weightBps), 0));
+const formatGrosze = (value) => value === null ? 'Unavailable' : `${value} PLN grosze`;
+const percent = (bps) => `${(Number(bps) / 100).toFixed(2)}%`;
+const rangeUrl = (range) => `/portfolio/valuation?date=${encodeURIComponent(props.valuationDate)}&range=${range}`;
 </script>
 
 <template>
-    <main aria-labelledby="portfolio-valuation-heading">
-        <header>
-            <h1 id="portfolio-valuation-heading">Portfolio valuation</h1>
-            <p>Valuation date: <time :datetime="valuationDate">{{ valuationDate }}</time></p>
-        </header>
-
-        <section aria-labelledby="portfolio-total-heading">
-            <h2 id="portfolio-total-heading">Total PLN value</h2>
-            <output aria-label="Total portfolio value in PLN grosze">{{ totalPlnGrosze }} PLN grosze</output>
-        </section>
-
-        <p v-if="displayState === 'loading'" role="status">Loading portfolio valuation…</p>
-        <p v-else-if="error" role="alert">{{ error }}</p>
-        <p v-else-if="displayState === 'empty'" role="status">No positions are available for this valuation date.</p>
-
-        <section v-else aria-labelledby="positions-heading">
-            <h2 id="positions-heading">Positions</h2>
-            <table>
-                <caption>Position valuation details</caption>
-                <thead>
-                    <tr>
-                        <th scope="col">Instrument</th>
-                        <th scope="col">Quantity</th>
-                        <th scope="col">Source price</th>
-                        <th scope="col">FX status</th>
-                        <th scope="col">PLN grosze</th>
-                        <th scope="col">Diagnostics</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr v-for="position in positions" :key="position.instrument">
-                        <th scope="row">{{ position.instrument }}</th>
-                        <td>{{ position.quantity }}</td>
-                        <td>
-                            <template v-if="position.sourcePrice.amount !== null">
-                                {{ position.sourcePrice.amount }} {{ position.sourcePrice.currency }}
-                            </template>
-                            <span v-else>Unavailable</span>
-                        </td>
-                        <td>{{ position.fx.status }}</td>
-                        <td>
-                            <template v-if="position.plnGrosze !== null">{{ position.plnGrosze }}</template>
-                            <span v-else>Unavailable</span>
-                        </td>
-                        <td>
-                            <ul v-if="position.diagnostics.length">
-                                <li v-for="diagnostic in position.diagnostics" :key="diagnostic">{{ diagnostic }}</li>
-                            </ul>
-                            <span v-else>None</span>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </section>
-    </main>
+  <main class="valuation-dashboard" aria-labelledby="portfolio-valuation-heading">
+    <header class="dashboard-header"><div><p class="eyebrow">Portfolio</p><h1 id="portfolio-valuation-heading">Valuation dashboard</h1><p>As of <time :datetime="valuationDate">{{ valuationDate }}</time></p></div><nav aria-label="Valuation period" class="range-selector"><a v-for="option in ranges" :key="option" :href="rangeUrl(option)" :aria-current="range === option ? 'page' : undefined" :class="{ active: range === option }">{{ option }}</a></nav></header>
+    <p v-if="error" role="alert" class="alert">{{ error }}</p><p v-else-if="state === 'empty'" role="status" class="empty">No confirmed positions are available for this valuation date.</p>
+    <section class="kpis" aria-label="Portfolio metrics"><article><h2>Total value</h2><output>{{ formatGrosze(kpis.totalValuePlnGrosze) }}</output></article><article><h2>Period return</h2><output>{{ kpis.periodReturnBps === null ? 'Unavailable' : `${kpis.periodReturnBps} bps` }}</output></article><article><h2>Invested capital</h2><output>{{ formatGrosze(kpis.investedCapitalPlnGrosze) }}</output></article><article><h2>Profit / loss</h2><output>{{ formatGrosze(kpis.profitLossPlnGrosze) }}</output></article></section>
+    <section class="panel" aria-labelledby="history-heading"><div class="panel-heading"><h2 id="history-heading">Value history</h2><span>{{ availableHistory.length }} available observations</span></div><Line v-if="availableHistory.length" :data="valueChartData" :options="{ responsive: true, maintainAspectRatio: false }" class="chart" aria-label="Portfolio value history line chart"/><p v-else class="empty">No available valuation history for this range.</p><ul class="history-list"><li v-for="point in history" :key="point.date"><time :datetime="point.date">{{ point.date }}</time>: {{ formatGrosze(point.totalPlnGrosze) }} <small>({{ point.source }})</small></li></ul></section>
+    <section class="allocation-grid" aria-label="Portfolio allocation"><article class="panel"><div class="panel-heading"><h2>Allocation by holding</h2><span v-if="allocation.availability === 'available'">{{ percent(allocationTotal) }}</span></div><p v-if="allocation.availability !== 'available'" class="empty">Allocation unavailable until every confirmed position has an exact valuation.</p><ul v-else class="allocation-list"><li v-for="item in allocation.byHolding" :key="item.instrument"><span>{{ item.instrument }}</span><strong>{{ percent(item.weightBps) }}</strong><small>{{ formatGrosze(item.valuePlnGrosze) }}</small></li></ul></article><article class="panel"><h2>Allocation by asset class</h2><p v-if="allocation.availability !== 'available'" class="empty">Allocation unavailable.</p><Doughnut v-else :data="allocationChartData" :options="{ responsive: true, maintainAspectRatio: false }" class="chart" aria-label="Asset class allocation donut chart"/><ul v-if="allocation.availability === 'available'" class="allocation-list"><li v-for="item in allocation.byAssetClass" :key="item.assetClass"><span>{{ item.assetClass }}</span><strong>{{ percent(item.weightBps) }}</strong><small>{{ formatGrosze(item.valuePlnGrosze) }}</small></li></ul></article></section>
+    <section class="panel" aria-labelledby="positions-heading"><h2 id="positions-heading">Holdings</h2><div class="table-wrap"><table><caption>Confirmed position valuation details</caption><thead><tr><th>Instrument</th><th>Quantity</th><th>Price</th><th>FX</th><th>Value</th><th>Weight</th><th>Availability / diagnostics</th></tr></thead><tbody><tr v-for="position in positions" :key="position.instrument"><th scope="row">{{ position.instrument }}</th><td>{{ position.quantity }}</td><td>{{ position.sourcePrice.amount === null ? 'Unavailable' : `${position.sourcePrice.amount} ${position.sourcePrice.currency}` }}</td><td>{{ position.fx.status }}</td><td>{{ formatGrosze(position.plnGrosze) }}</td><td>{{ position.plnGrosze === null || allocation.availability !== 'available' ? 'Unavailable' : percent(allocation.byHolding.find((item) => item.instrument === position.instrument)?.weightBps) }}</td><td><strong>{{ position.availability }}</strong><ul v-if="position.diagnostics.length"><li v-for="diagnostic in position.diagnostics" :key="diagnostic">{{ diagnostic }}</li></ul><span v-else>None</span></td></tr></tbody></table></div></section>
+  </main>
 </template>
+
+<style scoped>
+.valuation-dashboard{max-width:1200px;margin:0 auto;padding:2rem;color:#1e293b}.dashboard-header,.panel-heading,.range-selector{display:flex;gap:1rem;align-items:center;justify-content:space-between;flex-wrap:wrap}.eyebrow{margin:0;color:#64748b;font-size:.8rem;font-weight:700;text-transform:uppercase}.dashboard-header h1{margin:.2rem 0}.range-selector a{padding:.35rem .55rem;border:1px solid #cbd5e1;border-radius:.4rem;color:inherit;text-decoration:none}.range-selector .active{background:#0f766e;border-color:#0f766e;color:#fff}.kpis,.allocation-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1rem;margin:1.25rem 0}.kpis article,.panel{border:1px solid #e2e8f0;border-radius:.75rem;background:#fff;padding:1rem;box-shadow:0 1px 2px rgba(15,23,42,.05)}.kpis h2,.panel h2{font-size:1rem;margin:0 0 .4rem}.kpis output{font-size:1.15rem;font-weight:700}.chart{height:240px}.history-list,.allocation-list{list-style:none;padding:0;margin:1rem 0 0}.history-list li,.allocation-list li{padding:.35rem 0;border-top:1px solid #f1f5f9}.allocation-list small{display:block;color:#64748b}.empty,.alert{color:#64748b}.alert{color:#b91c1c}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;margin-top:.75rem;text-align:left}th,td{padding:.6rem;border-top:1px solid #e2e8f0;vertical-align:top}td ul{margin:.25rem 0;padding-left:1rem}@media(max-width:640px){.valuation-dashboard{padding:1rem}.dashboard-header{align-items:flex-start}.range-selector{justify-content:flex-start}}
+</style>

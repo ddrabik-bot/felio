@@ -14,6 +14,7 @@ final readonly class PortfolioValuationRow
         public int $accountId,
         public string $instrument,
         public string $quantity,
+        public ?int $averageCostPlnGrosze,
         public PriceQuote $sourcePrice,
         public ?FxRateResult $fxRate,
         public ValuationAvailability $availability,

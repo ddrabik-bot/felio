@@ -19,7 +19,7 @@ final class EloquentPortfolioValuationReadRepository implements PortfolioValuati
         $asOf = $valuationDate->format('Y-m-d').'T23:59:59+00:00';
         $rows = DB::table('portfolio_import_source_rows as rows')
             ->join('portfolio_import_batches as batches', 'batches.id', '=', 'rows.portfolio_import_batch_id')
-            ->select(['rows.id', 'batches.portfolio_account_id', 'rows.canonical_instrument', 'rows.quantity', 'rows.as_of', 'batches.imported_at', 'batches.id as batch_id'])
+            ->select(['rows.id', 'batches.portfolio_account_id', 'rows.canonical_instrument', 'rows.quantity', 'rows.average_cost_pln_grosze', 'rows.as_of', 'batches.imported_at', 'batches.id as batch_id'])
             ->where('rows.status', 'valid')
             ->whereNotNull('rows.canonical_instrument')
             ->where('batches.portfolio_account_id', $portfolioAccountId)
@@ -39,7 +39,7 @@ final class EloquentPortfolioValuationReadRepository implements PortfolioValuati
                 continue;
             }
 
-            $positions[$key] = new PortfolioValuationPosition((int) $row->id, (int) $row->portfolio_account_id, $row->canonical_instrument, (string) $row->quantity);
+            $positions[$key] = new PortfolioValuationPosition((int) $row->id, (int) $row->portfolio_account_id, $row->canonical_instrument, (string) $row->quantity, $row->average_cost_pln_grosze === null ? null : (int) $row->average_cost_pln_grosze);
         }
 
         return array_values($positions);
