@@ -85,6 +85,38 @@ it('refreshes only the active confirmed instrument universe and persists exact c
         ->and(DB::table('market_data_refresh_outcomes')->count())->toBe(2);
 });
 
+it('does not persist partial price or FX data when either provider throws', function (): void {
+    scheduledPosition('OTLK.US');
+    scheduledPosition('PZU.PL');
+
+    app()->instance(MarketDataProvider::class, new class implements MarketDataProvider {
+        private int $calls = 0;
+
+        public function availability(ProviderInstrumentMapping $mapping): \App\Domain\MarketData\InstrumentAvailability { throw new LogicException('unused'); }
+
+        public function fetch(ProviderInstrumentMapping $mapping): InstrumentMarketData
+        {
+            if (++$this->calls === 2) {
+                throw new RuntimeException('provider timeout');
+            }
+
+            return schedulerMarketData($mapping);
+        }
+    });
+    app()->instance(FxRateProvider::class, new class implements FxRateProvider {
+        public function historical(string $currency, DateTimeImmutable $requestedDate): FxRateResult { throw new LogicException('unused'); }
+        public function current(string $currency, DateTimeImmutable $asOfDate): FxRateResult { throw new LogicException('unused'); }
+        public function historicalMany(array $currencies, DateTimeImmutable $requestedDate): array { return []; }
+    });
+
+    app(MarketDataRefreshService::class)->refresh(new DateTimeImmutable('2026-08-12T12:00:00+02:00'));
+
+    expect(DB::table('market_data_snapshots')->count())->toBe(0)
+        ->and(DB::table('daily_ohlc_observations')->count())->toBe(0)
+        ->and(DB::table('fx_rate_snapshots')->count())->toBe(0)
+        ->and(DB::table('market_data_refresh_outcomes')->where('subject_type', 'instrument')->where('availability', 'unavailable')->value('reason'))->toBe('provider_exception');
+});
+
 it('records no-data and unavailable reasons without writing source observations', function (): void {
     scheduledPosition('OTLK.US');
     $provider = new class implements MarketDataProvider {

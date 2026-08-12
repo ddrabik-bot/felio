@@ -27,46 +27,65 @@ final readonly class MarketDataRefreshService
     public function refresh(DateTimeImmutable $now): void
     {
         $date = $now->setTimezone(new DateTimeZone('Europe/Warsaw'))->format('Y-m-d');
+        $outcomes = [];
+        $marketData = [];
         $currencies = [];
 
         foreach ($this->activeInstruments() as $instrument) {
             $mapping = $this->mapper->map(new CanonicalInstrument($instrument));
             if ($mapping === null) {
-                $this->record($date, 'instrument', $instrument, 'unavailable', 'provider_mapping_missing');
+                $outcomes[] = ['instrument', $instrument, 'unavailable', 'provider_mapping_missing'];
                 continue;
             }
 
             try {
                 $result = $this->marketDataProvider->fetch($mapping);
             } catch (\Throwable $exception) {
-                $this->record($date, 'instrument', $instrument, 'unavailable', 'provider_exception');
-                continue;
+                $outcomes[] = ['instrument', $instrument, 'unavailable', 'provider_exception'];
+                $this->recordOutcomes($date, $outcomes);
+
+                return;
             }
 
-            $this->record($date, 'instrument', $instrument, $result->status->value, $result->error?->diagnostic);
+            $outcomes[] = ['instrument', $instrument, $result->status->value, $result->error?->diagnostic];
             if ($result->status !== AvailabilityStatus::Available || $result->snapshot === null) {
                 continue;
             }
 
-            $this->marketDataPersistence->persist($result, $date);
+            $marketData[] = $result;
             if ($result->snapshot->quoteCurrency !== 'PLN') {
                 $currencies[$result->snapshot->quoteCurrency] = true;
             }
         }
 
+        $fxRates = [];
         foreach (array_keys($currencies) as $currency) {
             try {
                 $result = $this->fxRateProvider->current($currency, $now);
             } catch (\Throwable $exception) {
-                $this->record($date, 'fx', $currency, 'unavailable', 'provider_exception');
-                continue;
+                $outcomes[] = ['fx', $currency, 'unavailable', 'provider_exception'];
+                $this->recordOutcomes($date, $outcomes);
+
+                return;
             }
 
-            $this->record($date, 'fx', $currency, $result->availability->value, $result->reason);
+            $outcomes[] = ['fx', $currency, $result->availability->value, $result->reason];
             if ($result->availability !== FxRateAvailability::Unavailable) {
-                $this->fxRatePersistence->persist($result);
+                $fxRates[] = $result;
             }
         }
+
+        DB::transaction(function () use ($marketData, $fxRates, $date): void {
+            foreach ($marketData as $result) {
+                $this->marketDataPersistence->persist($result, $date);
+            }
+
+            foreach ($fxRates as $result) {
+                $this->fxRatePersistence->persist($result);
+            }
+        });
+
+        $this->recordOutcomes($date, $outcomes);
     }
 
     /** @return list<string> */
@@ -77,6 +96,14 @@ final readonly class MarketDataRefreshService
             ->join('portfolio_accounts as accounts', 'accounts.id', '=', 'batches.portfolio_account_id')
             ->where('accounts.is_active', true)->where('rows.status', 'valid')->whereNotNull('rows.canonical_instrument')
             ->distinct()->orderBy('rows.canonical_instrument')->pluck('rows.canonical_instrument')->map(static fn ($value): string => (string) $value)->all();
+    }
+
+    /** @param list<array{string, string, string, ?string}> $outcomes */
+    private function recordOutcomes(string $date, array $outcomes): void
+    {
+        foreach ($outcomes as [$type, $subject, $availability, $reason]) {
+            $this->record($date, $type, $subject, $availability, $reason);
+        }
     }
 
     private function record(string $date, string $type, string $subject, string $availability, ?string $reason): void
