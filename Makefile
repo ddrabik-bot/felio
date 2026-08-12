@@ -3,7 +3,7 @@ TEST_COMPOSE = $(COMPOSE) -f docker-compose.test.yml
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test test-postgresql test-auth test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
+.PHONY: up down restart logs build ps test test-postgresql test-auth test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-scheduler test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
 
 up:
 	$(COMPOSE) up -d
@@ -94,6 +94,16 @@ test-portfolio-dashboard:
 	$(COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force
 	$(COMPOSE) run --rm --no-deps app php vendor/bin/pest tests/Feature/Portfolio/PortfolioValuationDashboardTest.php
 
+test-scheduler: test-compose-isolation
+	@set -eu; \
+	project="felio-scheduler-test-$$$$"; subnet="10.89.3.0/24"; \
+	cleanup() { test_status="$$?"; cleanup_status=0; if FELIO_COMPOSE_PROJECT="$$project" FELIO_TEST_SUBNET="$$subnet" $(TEST_COMPOSE) down -v --remove-orphans; then :; else cleanup_status="$$?"; fi; trap - EXIT; if [ "$$test_status" -ne 0 ]; then exit "$$test_status"; fi; exit "$$cleanup_status"; }; \
+	trap cleanup EXIT; \
+	FELIO_COMPOSE_PROJECT="$$project" FELIO_TEST_SUBNET="$$subnet" $(TEST_COMPOSE) up -d --wait db; \
+	FELIO_COMPOSE_PROJECT="$$project" FELIO_TEST_SUBNET="$$subnet" $(TEST_COMPOSE) build app; \
+	FELIO_COMPOSE_PROJECT="$$project" FELIO_TEST_SUBNET="$$subnet" $(TEST_COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force; \
+	FELIO_COMPOSE_PROJECT="$$project" FELIO_TEST_SUBNET="$$subnet" $(TEST_COMPOSE) run --rm --no-deps app php vendor/bin/pest --configuration=phpunit.pgsql.xml tests/Feature/Scheduling/MarketDataSchedulerTest.php tests/Feature/MarketData/LaravelYfinanceGatewayTest.php
+
 test-xtb-import:
 	$(COMPOSE) up -d db
 	$(COMPOSE) run --rm --no-deps app php artisan migrate:fresh --force
@@ -143,8 +153,8 @@ spike-yfinance:
 	}; \
 	trap cleanup EXIT; \
 	$(COMPOSE) run --no-deps --name "$$container_name" yfinance-spike; \
-	docker cp "$$container_name:/workspace/spikes/yfinance-provider/results/xtb-sample.json" "$$tmp_results/xtb-sample.json"; \
-	docker cp "$$container_name:/workspace/spikes/yfinance-provider/results/xtb-sample.md" "$$tmp_results/xtb-sample.md"; \
+	docker cp "$$container_name:/app/results/xtb-sample.json" "$$tmp_results/xtb-sample.json"; \
+	docker cp "$$container_name:/app/results/xtb-sample.md" "$$tmp_results/xtb-sample.md"; \
 	test -s "$$tmp_results/xtb-sample.json"; \
 	test -s "$$tmp_results/xtb-sample.md"; \
 	mv "$$tmp_results/xtb-sample.json" spikes/yfinance-provider/results/xtb-sample.json; \

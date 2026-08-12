@@ -49,3 +49,6 @@ networks:
   felio_test_net:
     name: ${FELIO_COMPOSE_PROJECT:-felio-test}_felio_test_net
     driver: bridge
+    ipam:
+      config:
+        - subnet: ${FELIO_TEST_SUBNET:-10.89.0.0/24}

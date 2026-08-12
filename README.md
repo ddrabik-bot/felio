@@ -299,6 +299,24 @@ make test-xtb-manual-import
 
 This target creates a unique Compose project and PostgreSQL volume for each invocation, runs `migrate:fresh` only inside that disposable database, then removes the test project and volume on exit. It uses the standalone `docker-compose.test.yml`, which defines only the `app` and `db` services on a project-private bridge network; `make test-compose-isolation` inspects the resolved configuration and fails if `cloudflare_tunnel` or any external network is present. Pest is run with `phpunit.pgsql.xml`, and `XtbImportDatabaseStateTest` asserts `DB::getDriverName() === 'pgsql'`; a SQLite fallback therefore fails the focused command instead of silently passing. It never touches the development database.
 
+## Scheduled market data and portfolio history cache
+
+The single `scheduler` Compose service runs Laravel `schedule:work`; it is the only scheduler host in the standard Compose topology. The internal-only `yfinance-web` sidecar exposes `GET /health` and `GET /v1/quotes/{provider-symbol}` only on `felio_felio_net`; it has no host port. It is a small yfinance HTTP/JSON boundary built from `spikes/yfinance-provider`: it sends unadjusted daily OHLC, corporate actions, provider exchange/currency metadata, and every numeric source value as a decimal string. Laravel binds `LaravelYfinanceGateway` to the existing `YahooFinanceGateway` contract and uses `http://yfinance-web:8000` by default (`YFINANCE_BASE_URL` overrides it). A malformed, unavailable, rate-limited, or no-data sidecar response remains typed and fail-closed.
+
+`market-data-refresh` runs every five minutes and is protected by Laravel's named `withoutOverlapping()` lock. It derives its universe only from valid confirmed source rows belonging to active portfolio accounts, resolves each instrument through the explicit Yahoo mapping, and persists only available exact-decimal OHLC results. Provider `NoData`, unavailable results, mapping gaps, and thrown provider failures never write a market/FX source observation; their safe diagnostic is recorded in `market_data_refresh_outcomes` instead.
+
+For every non-PLN successful quote, the refresh asks the NBP provider for the current rate and persists only available or explicitly stale provider observations. No market or FX fallback is fabricated; the NBP adapter continues to call the official NBP API directly.
+
+`daily-portfolio-snapshot` runs at 00:30 and is also non-overlapping. It derives daily values from confirmed historical source positions through the existing valuation service, upserts the cache table `portfolio_value_snapshots` by account/date, and forward-fills a missing valuation day only from a prior available cache snapshot with an explicit `prior_snapshot_forward_fill` source and diagnostic. Transactions/source rows, market data, and FX snapshots remain the source of truth; the portfolio snapshot is only a recalculable cache.
+
+Run focused disposable PostgreSQL coverage with:
+
+```sh
+make test-scheduler
+```
+
+Inspect the registered run schedule in a Compose application container with `php artisan schedule:list`.
+
 ## Portfolio valuation dashboard
 
 `GET /portfolio/valuation?date=YYYY-MM-DD` is an authenticated local Inertia dashboard over the existing portfolio valuation read model. It scopes every valuation read to the authenticated user's active portfolio account, so positions from other accounts or users are excluded. The `date` query parameter is required and is the exact valuation date; it never defaults to the current date. The backend supplies the integer PLN-grosze total, deterministic position rows, source price metadata, FX status, valuation availability, and all diagnostics. The Vue page only renders these values; it does not calculate money, select source data, or omit unavailable positions.

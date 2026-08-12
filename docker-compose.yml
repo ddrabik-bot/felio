@@ -25,6 +25,46 @@ services:
     networks:
       - felio_net
 
+  yfinance-web:
+    build:
+      context: ./spikes/yfinance-provider
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8000
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks:
+      - felio_net
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    working_dir: /var/www/html
+    command: ["php", "artisan", "schedule:work"]
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_KEY: base64:Uu9pib5bVJrdUQJZ8OMO7pPqL3HP/3l4FiZNsWkubHY=
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: felio
+      DB_USERNAME: felio
+      DB_PASSWORD: felio
+    depends_on:
+      db:
+        condition: service_healthy
+      yfinance-web:
+        condition: service_healthy
+    networks:
+      - felio_net
+
   web:
     build:
       context: .
@@ -59,9 +99,8 @@ services:
     build:
       context: ./spikes/yfinance-provider
       dockerfile: Dockerfile
-    working_dir: /workspace/spikes/yfinance-provider
-    profiles:
-      - spike
+    working_dir: /app
+    entrypoint: ["python", "probe.py"]
     networks:
       - felio_net
 

@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'yfinance' => [
+        'base_url' => env('YFINANCE_BASE_URL', 'http://yfinance-web:8000'),
+    ],
+
 ];

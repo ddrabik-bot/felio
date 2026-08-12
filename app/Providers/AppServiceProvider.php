@@ -4,13 +4,21 @@ namespace App\Providers;
 
 use App\Application\Portfolio\PortfolioValuationService;
 use App\Domain\Fx\FxRatePersistenceRepository;
+use App\Domain\Fx\FxRateProvider;
+use App\Domain\Fx\NbpFxGateway;
+use App\Domain\Fx\NbpTableAFxProvider;
 use App\Domain\MarketData\MarketDataPersistenceRepository;
+use App\Domain\MarketData\MarketDataProvider;
+use App\Domain\MarketData\YahooFinanceGateway;
+use App\Domain\MarketData\YahooFinanceMarketDataProvider;
 use App\Domain\Portfolio\PortfolioImportRepository;
 use App\Domain\Portfolio\PortfolioValuationReadRepository;
 use App\Domain\Valuation\StaleFxRatePolicy;
 use App\Domain\Valuation\ValuationService;
 use App\Infrastructure\Fx\EloquentFxRatePersistenceRepository;
+use App\Infrastructure\Fx\LaravelNbpFxGateway;
 use App\Infrastructure\MarketData\EloquentMarketDataPersistenceRepository;
+use App\Infrastructure\MarketData\LaravelYfinanceGateway;
 use App\Infrastructure\Portfolio\EloquentPortfolioImportRepository;
 use App\Infrastructure\Portfolio\EloquentPortfolioValuationReadRepository;
 use Illuminate\Support\ServiceProvider;
@@ -23,7 +31,11 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(FxRatePersistenceRepository::class, EloquentFxRatePersistenceRepository::class);
+        $this->app->bind(NbpFxGateway::class, LaravelNbpFxGateway::class);
+        $this->app->bind(FxRateProvider::class, NbpTableAFxProvider::class);
         $this->app->bind(MarketDataPersistenceRepository::class, EloquentMarketDataPersistenceRepository::class);
+        $this->app->bind(YahooFinanceGateway::class, LaravelYfinanceGateway::class);
+        $this->app->bind(MarketDataProvider::class, YahooFinanceMarketDataProvider::class);
         $this->app->bind(PortfolioImportRepository::class, EloquentPortfolioImportRepository::class);
         $this->app->bind(PortfolioValuationReadRepository::class, EloquentPortfolioValuationReadRepository::class);
         $this->app->bind(PortfolioValuationService::class, static fn ($app): PortfolioValuationService => new PortfolioValuationService(
