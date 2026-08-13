@@ -1,123 +1,17 @@
 <script setup>
 import { router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
-
-const props = defineProps({ activePortfolio: Object, portfolios: Array, batches: Array });
-const preview = ref(null);
-const error = ref(null);
-const file = ref(null);
-const loading = ref(false);
-const mappings = ref({});
+import AppLayout from '@/Components/AppLayout.vue';
+const props = defineProps({ activePortfolio: Object, portfolios: { default: () => [] }, batches: { default: () => [] } });
+const preview = ref(null); const error = ref(null); const file = ref(null); const loading = ref(false); const mappings = ref({});
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
 const mappingSymbols = computed(() => [...new Set((preview.value?.rows ?? []).filter((row) => row.status === 'pending' && row.sourceSymbol).map((row) => row.sourceSymbol))]);
-
-function selectedMappings() {
-    return Object.fromEntries(
-        Object.entries(mappings.value)
-            .filter(([sourceSymbol, canonicalInstrument]) => sourceSymbol && canonicalInstrument.trim())
-            .map(([sourceSymbol, canonicalInstrument]) => [sourceSymbol, canonicalInstrument.trim()]),
-    );
-}
-
-function requestHeaders(json = false) {
-    return {
-        Accept: 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-CSRF-TOKEN': csrfToken,
-        ...(json ? { 'Content-Type': 'application/json' } : {}),
-    };
-}
-
-async function responseBody(response) {
-    const body = await response.json();
-    if (!response.ok) throw body;
-
-    return body;
-}
-
-function choosePortfolio(event) {
-    router.post('/portfolio/active', { portfolioId: Number(event.target.value) }, { onSuccess: () => router.reload() });
-}
-
-function upload() {
-    if (!file.value) return;
-    loading.value = true;
-    error.value = null;
-    const data = new FormData();
-    data.append('workbook', file.value);
-    fetch('/portfolio/imports/xtb', { method: 'POST', body: data, headers: requestHeaders() })
-        .then(responseBody)
-        .then((body) => {
-            preview.value = body;
-            mappings.value = {};
-        })
-        .catch((exception) => error.value = exception.errors?.workbook?.[0] || exception.message || 'Upload failed.')
-        .finally(() => loading.value = false);
-}
-
-function confirm() {
-    if (!preview.value) return;
-    loading.value = true;
-    fetch(`/portfolio/imports/xtb/${preview.value.importId}/confirm`, {
-        method: 'POST',
-        headers: requestHeaders(true),
-        body: JSON.stringify({ mappings: selectedMappings() }),
-    })
-        .then(responseBody)
-        .then(() => {
-            preview.value = null;
-            router.reload();
-        })
-        .catch((exception) => error.value = exception.errors?.workbook?.[0] || exception.message || 'Import confirmation failed.')
-        .finally(() => loading.value = false);
-}
-
-function batchAction(id, action) {
-    fetch(`/portfolio/import-batches/${id}${action === 'delete' ? '' : '/reprocess'}`, {
-        method: action === 'delete' ? 'DELETE' : 'POST',
-        headers: requestHeaders(true),
-        body: action === 'delete' ? null : JSON.stringify({ mappings: mappings.value }),
-    })
-        .then(responseBody)
-        .then(() => router.reload())
-        .catch((exception) => error.value = exception.message || 'Batch action failed.');
-}
+const selectedMappings = () => Object.fromEntries(Object.entries(mappings.value).filter(([sourceSymbol, canonicalInstrument]) => sourceSymbol && canonicalInstrument.trim()).map(([sourceSymbol, canonicalInstrument]) => [sourceSymbol, canonicalInstrument.trim()]));
+const requestHeaders = (json = false) => ({ Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken, ...(json ? { 'Content-Type': 'application/json' } : {}) });
+async function responseBody(response) { const body = await response.json(); if (!response.ok) throw body; return body; }
+function choosePortfolio(event) { router.post('/portfolio/active', { portfolioId: Number(event.target.value) }, { onSuccess: () => router.reload() }); }
+function upload() { if (!file.value) return; loading.value = true; error.value = null; const data = new FormData(); data.append('workbook', file.value); fetch('/portfolio/imports/xtb', { method: 'POST', body: data, headers: requestHeaders() }).then(responseBody).then((body) => { preview.value = body; mappings.value = {}; }).catch((exception) => error.value = exception.errors?.workbook?.[0] || exception.message || 'Upload failed.').finally(() => loading.value = false); }
+function confirm() { if (!preview.value) return; loading.value = true; fetch(`/portfolio/imports/xtb/${preview.value.importId}/confirm`, { method: 'POST', headers: requestHeaders(true), body: JSON.stringify({ mappings: selectedMappings() }) }).then(responseBody).then(() => { preview.value = null; router.reload(); }).catch((exception) => error.value = exception.errors?.workbook?.[0] || exception.message || 'Import confirmation failed.').finally(() => loading.value = false); }
+function batchAction(id, action) { fetch(`/portfolio/import-batches/${id}${action === 'delete' ? '' : '/reprocess'}`, { method: action === 'delete' ? 'DELETE' : 'POST', headers: requestHeaders(true), body: action === 'delete' ? null : JSON.stringify({ mappings: mappings.value }) }).then(responseBody).then(() => router.reload()).catch((exception) => error.value = exception.message || 'Batch action failed.'); }
 </script>
-
-<template>
-    <main aria-labelledby="xtb-import-heading">
-        <nav aria-label="Application">
-            <a href="/portfolio/imports/xtb">Imports</a>
-            <a href="/portfolio/valuation?date=2026-01-02">Valuation</a>
-            <form action="/logout" method="post">
-                <input type="hidden" name="_token" :value="csrfToken">
-                <button type="submit">Log out</button>
-            </form>
-            <label>Active portfolio <select :value="activePortfolio.id" @change="choosePortfolio"><option v-for="portfolio in portfolios" :key="portfolio.id" :value="portfolio.id">{{ portfolio.broker }} — {{ portfolio.accountReference }}</option></select></label>
-        </nav>
-        <h1 id="xtb-import-heading">XTB import</h1>
-        <input type="file" accept=".xlsx" @change="file = $event.target.files[0]">
-        <button :disabled="loading || !file" @click="upload">Preview import</button>
-        <p v-if="error" role="alert">{{ error }}</p>
-
-        <section v-if="preview" aria-label="Import preview">
-            <h2>Parse-only preview</h2>
-            <p>Valid: {{ preview.summary.valid }}, pending: {{ preview.summary.pending }}, rejected: {{ preview.summary.rejected }}</p>
-            <table>
-                <caption>Parsed import rows</caption>
-                <thead><tr><th>Status</th><th>Source row</th><th>Symbol</th><th>Operation</th><th>Quantity</th><th>Canonical instrument / diagnostic</th></tr></thead>
-                <tbody><tr v-for="row in preview.rows" :key="`${row.sourceRowReference}-${row.status}`"><td>{{ row.status }}</td><td>{{ row.sourceRowReference }}</td><td>{{ row.sourceSymbol }}</td><td>{{ row.operation }}</td><td>{{ row.quantity }}</td><td>{{ row.canonicalInstrument || row.diagnostic }}</td></tr></tbody>
-            </table>
-            <fieldset v-if="mappingSymbols.length">
-                <legend>Resolve pending instruments</legend>
-                <label v-for="symbol in mappingSymbols" :key="symbol">{{ symbol }} <input v-model="mappings[symbol]" :aria-label="`Canonical instrument for ${symbol}`" placeholder="e.g. PZU.PL"></label>
-            </fieldset>
-            <button :disabled="loading" @click="confirm">Confirm import</button>
-        </section>
-
-        <section>
-            <h2>Import batches</h2>
-            <ul><li v-for="batch in batches" :key="batch.id">#{{ batch.id }} — {{ batch.status }} <button @click="batchAction(batch.id, 'reprocess')">Reprocess</button> <button @click="batchAction(batch.id, 'delete')">Destroy</button></li></ul>
-        </section>
-    </main>
-</template>
+<template><AppLayout><main class="app-content" aria-labelledby="xtb-import-heading"><header class="flex flex-wrap items-end justify-between gap-4"><div><p class="eyebrow">Data import</p><h1 id="xtb-import-heading" class="mt-1 text-3xl font-semibold tracking-tight text-ink-950">XTB import</h1><p class="mt-2 muted">Preview a workbook, resolve symbols, then confirm its exact rows.</p></div><label class="field-label min-w-58">Active portfolio<select class="field" :value="activePortfolio?.id" @change="choosePortfolio"><option v-for="portfolio in portfolios" :key="portfolio.id" :value="portfolio.id">{{ portfolio.broker }} — {{ portfolio.accountReference }}</option></select></label></header><p v-if="error" class="notice notice-error mt-6" role="alert">{{ error }}</p><section class="card mt-6"><div class="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end"><div><h2 class="section-title">Upload workbook</h2><p class="muted">Choose the XTB .xlsx workbook you want to inspect. Nothing is persisted until confirmation.</p><label class="mt-5 flex cursor-pointer flex-col items-center justify-center rounded-card border-2 border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center transition hover:border-brand-500 hover:bg-brand-50"><span class="font-semibold text-slate-700">{{ file ? file.name : 'Drop an XTB workbook here or browse' }}</span><span class="mt-1 text-sm text-slate-500">.xlsx files only</span><input class="sr-only" type="file" accept=".xlsx" @change="file = $event.target.files[0]"></label></div><button class="btn btn-primary" :disabled="loading || !file" @click="upload">{{ loading ? 'Preparing preview…' : 'Preview import' }}</button></div></section><section v-if="preview" class="card mt-6" aria-label="Import preview"><div class="flex flex-wrap items-center justify-between gap-3"><div><p class="eyebrow">Step 2 of 2</p><h2 class="section-title mt-1">Parse-only preview</h2></div><p class="text-sm text-slate-600"><strong>{{ preview.summary.valid }}</strong> valid · <strong>{{ preview.summary.pending }}</strong> pending · <strong>{{ preview.summary.rejected }}</strong> rejected</p></div><div class="table-wrap mt-5"><table class="data-table"><caption class="sr-only">Parsed import rows</caption><thead><tr><th>Status</th><th>Source row</th><th>Symbol</th><th>Operation</th><th>Quantity</th><th>Canonical instrument / diagnostic</th></tr></thead><tbody><tr v-for="row in preview.rows" :key="`${row.sourceRowReference}-${row.status}`"><td><span class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{{ row.status }}</span></td><td>{{ row.sourceRowReference }}</td><td>{{ row.sourceSymbol }}</td><td>{{ row.operation }}</td><td>{{ row.quantity }}</td><td>{{ row.canonicalInstrument || row.diagnostic }}</td></tr></tbody></table></div><fieldset v-if="mappingSymbols.length" class="mt-6 rounded-control border border-brand-100 bg-brand-50 p-4"><legend class="px-2 text-sm font-semibold text-brand-700">Resolve pending instruments</legend><div class="grid gap-4 sm:grid-cols-2"><label v-for="symbol in mappingSymbols" :key="symbol" class="field-label">{{ symbol }}<input v-model="mappings[symbol]" class="field" :aria-label="`Canonical instrument for ${symbol}`" placeholder="e.g. PZU.PL"></label></div></fieldset><button class="btn btn-primary mt-6" :disabled="loading" @click="confirm">Confirm import</button></section><section class="card mt-6"><h2 class="section-title">Import batches</h2><p v-if="!batches.length" class="notice notice-info mt-4">No import batches have been created yet.</p><ul v-else class="mt-4 divide-y divide-slate-100"><li v-for="batch in batches" :key="batch.id" class="flex flex-wrap items-center justify-between gap-3 py-4"><span class="text-sm"><strong>#{{ batch.id }}</strong> <span class="text-slate-500">— {{ batch.status }}</span></span><span class="flex gap-2"><button class="btn btn-secondary" @click="batchAction(batch.id, 'reprocess')">Reprocess</button><button class="btn btn-danger" @click="batchAction(batch.id, 'delete')">Destroy</button></span></li></ul></section></main></AppLayout></template>

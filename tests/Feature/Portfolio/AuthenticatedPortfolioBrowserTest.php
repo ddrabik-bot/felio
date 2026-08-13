@@ -137,18 +137,18 @@ it('keeps exactly one active portfolio when PostgreSQL onboarding requests race'
     }
 });
 
-it('ships a browser import component that includes the Laravel CSRF token on every state-changing fetch, uses a native tokenized logout form, and submits selected mappings', function (): void {
+it('ships a browser import component that includes the Laravel CSRF token on every state-changing fetch, delegates logout to the shared Inertia layout, and submits selected mappings', function (): void {
     $component = file_get_contents(resource_path('js/Pages/Portfolio/XtbImport.vue'));
+    $layout = file_get_contents(resource_path('js/Components/AppLayout.vue'));
 
     expect($component)
         ->toContain("document.querySelector('meta[name=\"csrf-token\"]')")
         ->toContain("'X-CSRF-TOKEN': csrfToken")
         ->toContain('JSON.stringify({ mappings: selectedMappings() })')
-        ->toContain('action="/logout" method="post"')
-        ->toContain('name="_token" :value="csrfToken"')
-        ->not->toContain('@submit.prevent="logout"')
+        ->toContain('@/Components/AppLayout.vue')
         ->toContain('preview.rows')
-        ->toContain('mappingSymbols');
+        ->toContain('mappingSymbols')
+        ->and($layout)->toContain("router.post('/logout'");
 });
 
 it('binds the valuation dashboard to the authenticated user active portfolio', function (): void {

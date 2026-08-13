@@ -4,6 +4,57 @@
 @source '../../storage/framework/views/*.php';
 
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: Inter, ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-display: Inter, ui-sans-serif, system-ui, sans-serif;
+    --color-brand-50: #effdf8;
+    --color-brand-100: #d5f9eb;
+    --color-brand-500: #12a979;
+    --color-brand-600: #07865f;
+    --color-brand-700: #056c4e;
+    --color-neutral-50: #f8faf9;
+    --color-neutral-100: #f1f5f3;
+    --color-neutral-200: #e2e8e5;
+    --color-neutral-500: #64748b;
+    --color-neutral-700: #334155;
+    --color-neutral-950: #14221d;
+    --color-ink-950: #14221d;
+    --color-surface: #ffffff;
+    --color-page: #f6f8f7;
+    --radius-card: 1.25rem;
+    --radius-control: .875rem;
+    --spacing-18: 4.5rem;
+    --spacing-22: 5.5rem;
+    --shadow-card: 0 1px 3px rgb(15 23 42 / .04), 0 12px 32px rgb(15 23 42 / .06);
+}
+
+@layer base {
+    * { box-sizing: border-box; }
+    body { @apply m-0 bg-page font-sans text-slate-800 antialiased; }
+    button, input, select { font: inherit; }
+    button, [role='button'] { @apply cursor-pointer; }
+    a { @apply text-brand-700 underline-offset-4 hover:text-brand-600; }
+    :focus-visible { @apply outline-2 outline-offset-2 outline-brand-600; }
+}
+
+@layer components {
+    .app-shell { @apply min-h-screen bg-page; }
+    .app-content { @apply mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 lg:px-8 lg:py-10; }
+    .card { @apply rounded-card border border-slate-200/80 bg-surface p-5 shadow-card sm:p-6; }
+    .btn { @apply inline-flex min-h-11 items-center justify-center rounded-control px-4 py-2.5 text-sm font-semibold no-underline transition disabled:cursor-not-allowed disabled:opacity-50; }
+    .btn-primary { @apply bg-brand-600 text-white hover:bg-brand-700; }
+    .btn-secondary { @apply border border-slate-200 bg-white text-slate-700 hover:border-brand-500 hover:bg-brand-50; }
+    .btn-danger { @apply border border-rose-200 bg-white text-rose-700 hover:bg-rose-50; }
+    .field { @apply mt-1.5 block w-full rounded-control border border-slate-300 bg-white px-3.5 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-100; }
+    .field-label { @apply block text-sm font-medium text-slate-700; }
+    .field-error { @apply mt-1.5 text-sm text-rose-700; }
+    .eyebrow { @apply m-0 text-xs font-bold tracking-[.14em] text-brand-700 uppercase; }
+    .section-title { @apply text-lg font-semibold tracking-tight text-ink-950; }
+    .muted { @apply text-sm leading-6 text-slate-500; }
+    .notice { @apply rounded-control border px-4 py-3 text-sm; }
+    .notice-error { @apply border-rose-200 bg-rose-50 text-rose-800; }
+    .notice-info { @apply border-brand-100 bg-brand-50 text-brand-700; }
+    .table-wrap { @apply overflow-x-auto; }
+    .data-table { @apply min-w-full border-separate border-spacing-0 text-left text-sm; }
+    .data-table th { @apply border-b border-slate-200 bg-slate-50 px-4 py-3 font-semibold text-slate-600; }
+    .data-table td { @apply border-b border-slate-100 px-4 py-3 align-top text-slate-700; }
 }

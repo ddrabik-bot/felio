@@ -1,24 +1,7 @@
 <script setup>
 import { Head, Link, useForm } from '@inertiajs/vue3';
-
+import AuthLayout from '@/Layouts/AuthLayout.vue';
 const form = useForm({ email: '', password: '', remember: false });
-
 const submit = () => form.post('/login', { onFinish: () => form.reset('password') });
 </script>
-
-<template>
-    <Head title="Sign in" />
-    <main>
-        <h1>Sign in</h1>
-        <form @submit.prevent="submit">
-            <label>Email <input v-model="form.email" type="email" autocomplete="email" required></label>
-            <p v-if="form.errors.email" role="alert">{{ form.errors.email }}</p>
-            <label>Password <input v-model="form.password" type="password" autocomplete="current-password" required></label>
-            <p v-if="form.errors.password" role="alert">{{ form.errors.password }}</p>
-            <label><input v-model="form.remember" type="checkbox"> Remember me</label>
-            <button :disabled="form.processing" type="submit">Sign in</button>
-        </form>
-        <p><Link href="/forgot-password">Forgot password?</Link></p>
-        <p><Link href="/register">Create an account</Link></p>
-    </main>
-</template>
+<template><Head title="Sign in" /><AuthLayout title="Sign in" subtitle="Access your portfolio securely."><form class="mt-7 space-y-5" @submit.prevent="submit"><div><label class="field-label" for="email">Email</label><input id="email" v-model="form.email" class="field" type="email" autocomplete="email" required><p v-if="form.errors.email" class="field-error" role="alert">{{ form.errors.email }}</p></div><div><label class="field-label" for="password">Password</label><input id="password" v-model="form.password" class="field" type="password" autocomplete="current-password" required><p v-if="form.errors.password" class="field-error" role="alert">{{ form.errors.password }}</p></div><label class="flex items-center gap-2 text-sm text-slate-600"><input v-model="form.remember" class="size-4 accent-brand-600" type="checkbox">Remember me</label><button class="btn btn-primary w-full" :disabled="form.processing" type="submit">Sign in</button></form><div class="mt-6 flex justify-between gap-3 text-sm"><Link href="/forgot-password">Forgot password?</Link><Link href="/register">Create account</Link></div></AuthLayout></template>
