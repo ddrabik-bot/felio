@@ -52,14 +52,21 @@ it('onboards a registered user into an active XTB portfolio before the browser i
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page->component('Portfolio/Onboarding', false));
 
-    $this->post('/portfolio/onboarding', ['accountReference' => 'XTB-SYNTHETIC-001'])
+    $this->post('/portfolio/onboarding')
         ->assertRedirect('/portfolio/imports/xtb');
 
     $user = User::query()->where('email', 'portfolio-owner@example.test')->sole();
-    expect(DB::table('portfolio_accounts')->where('user_id', $user->id)->where('broker', 'xtb')->where('account_reference', 'XTB-SYNTHETIC-001')->where('is_active', true)->exists())->toBeTrue();
+    $accountId = DB::table('portfolio_accounts')
+        ->where('user_id', $user->id)
+        ->where('broker', 'xtb')
+        ->where('is_active', true)
+        ->value('id');
+    expect($accountId)->not->toBeNull()
+        ->and(DB::table('portfolio_accounts')->where('id', $accountId)->value('account_reference'))->toBeNull();
 
     $upload = $this->postJson('/portfolio/imports/xtb', ['workbook' => sanitizedXtbUpload()]);
     $upload->assertCreated()
+        ->assertJsonPath('activePortfolio.id', $accountId)
         ->assertJsonPath('summary.pending', 2)
         ->assertJsonPath('rows.0.status', 'pending')
         ->assertJsonPath('rows.0.sourceSymbol', 'PZU')
@@ -176,6 +183,26 @@ it('keeps the browser upload preview confirmation and batches inside the active 
             ->where('batches.0.portfolioAccountId', $accountId)
             ->where('batches.0.status', 'COMPLETED_WITH_WARNINGS')
         );
+});
+
+it('imports a workbook from a different XTB account into the currently active portfolio', function (): void {
+    Storage::fake('local');
+    $user = User::factory()->create();
+    $accountId = activePortfolioFor($user, 'XTB-DIFFERENT-ACTIVE-ACCOUNT');
+
+    $upload = $this->actingAs($user)->postJson('/portfolio/imports/xtb', ['workbook' => sanitizedXtbUpload()]);
+    $upload->assertCreated()
+        ->assertJsonPath('activePortfolio.id', $accountId);
+
+    $this->actingAs($user)->postJson('/portfolio/imports/xtb/'.$upload->json('importId').'/confirm', ['mappings' => ['PZU' => 'PZU.PL']])
+        ->assertOk()
+        ->assertJsonPath('status', 'COMPLETED_WITH_WARNINGS');
+
+    expect(DB::table('portfolio_import_batches')->where('portfolio_account_id', $accountId)->count())->toBe(1)
+        ->and(DB::table('portfolio_import_batches')->where('portfolio_account_id', '!=', $accountId)->count())->toBe(0)
+        ->and(DB::table('portfolio_import_source_rows')->count())->toBe(4)
+        ->and(DB::table('portfolio_positions')->where('portfolio_account_id', $accountId)->count())->toBe(1)
+        ->and(DB::table('portfolio_accounts')->where('account_reference', 'XTB-SYNTHETIC-001')->exists())->toBeFalse();
 });
 
 it('cleans up a pending workbook when the active portfolio changes before confirmation', function (): void {

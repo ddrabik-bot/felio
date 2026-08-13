@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -26,16 +25,7 @@ final class PortfolioOnboardingController extends Controller
             return redirect('/portfolio/imports/xtb');
         }
 
-        $validated = $request->validate([
-            'accountReference' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('portfolio_accounts', 'account_reference')->where('broker', 'xtb'),
-            ],
-        ]);
-
-        DB::transaction(function () use ($request, $validated): void {
+        DB::transaction(function () use ($request): void {
             $userId = $request->user()->id;
 
             DB::table('users')->where('id', $userId)->lockForUpdate()->firstOrFail();
@@ -47,7 +37,7 @@ final class PortfolioOnboardingController extends Controller
             DB::table('portfolio_accounts')->insert([
                 'user_id' => $userId,
                 'broker' => 'xtb',
-                'account_reference' => $validated['accountReference'],
+                'account_reference' => null,
                 'is_active' => true,
                 'created_at' => now(),
                 'updated_at' => now(),

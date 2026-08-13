@@ -26,7 +26,7 @@ final readonly class XtbManualImportWorkflow
     }
 
     /** @param array<string, string> $mappings @return array{batchId: int, status: string, summary: array{valid: int, pending: int, rejected: int}} */
-    public function confirm(string $path, array $mappings): array
+    public function confirm(string $path, array $mappings, int $portfolioAccountId): array
     {
         if (! $this->isGeneratedTemporaryWorkbookPath($path)) {
             throw new InvalidArgumentException('The temporary XTB import path is invalid.');
@@ -34,10 +34,11 @@ final readonly class XtbManualImportWorkflow
 
         try {
             $analysis = $this->analyze(Storage::disk('local')->path($path), $mappings);
-            $this->importService->persist(new ImportBatch('xtb', $analysis->accountReference, $analysis->batchIdentity, new DateTimeImmutable), $analysis->rows);
+            $this->importService->persist(new ImportBatch('xtb', $analysis->accountReference, $analysis->batchIdentity, new DateTimeImmutable, $portfolioAccountId), $analysis->rows);
             $summary = $analysis->summary();
             $status = $summary['pending'] > 0 || $summary['rejected'] > 0 ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED';
             $batchId = (int) DB::table('portfolio_import_batches')
+                ->where('portfolio_account_id', $portfolioAccountId)
                 ->where('source_batch_identity', $analysis->batchIdentity)
                 ->value('id');
             DB::table('portfolio_import_batches')->where('id', $batchId)->update(['status' => $status, 'updated_at' => now()]);
@@ -71,7 +72,7 @@ final readonly class XtbManualImportWorkflow
                 $imports[] = PortfolioImportRow::rejected($row->source_row_identity, new DateTimeImmutable($row->as_of), $raw, $row->diagnostic);
             }
         }
-        $this->importService->persist(new ImportBatch('xtb', $this->accountReference((int) $batch->portfolio_account_id), $batch->source_batch_identity, new DateTimeImmutable($batch->imported_at)), $imports);
+        $this->importService->persist(new ImportBatch('xtb', $this->accountReference((int) $batch->portfolio_account_id), $batch->source_batch_identity, new DateTimeImmutable($batch->imported_at), (int) $batch->portfolio_account_id), $imports);
         $summary = (new XtbImportAnalysis('', $batch->source_batch_identity, $imports))->summary();
         $status = $summary['pending'] > 0 || $summary['rejected'] > 0 ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED';
         DB::table('portfolio_import_batches')->where('id', $batchId)->update(['status' => $status, 'updated_at' => now()]);

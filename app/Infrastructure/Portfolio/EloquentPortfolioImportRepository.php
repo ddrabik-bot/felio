@@ -37,6 +37,10 @@ final class EloquentPortfolioImportRepository implements PortfolioImportReposito
 
     private function upsertAccount(ImportBatch $batch, Carbon $now): int
     {
+        if ($batch->portfolioAccountId !== null) {
+            return $batch->portfolioAccountId;
+        }
+
         DB::table('portfolio_accounts')->upsert([[
             'broker' => $batch->broker,
             'account_reference' => $batch->accountReference,

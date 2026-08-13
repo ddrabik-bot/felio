@@ -1,20 +1,15 @@
 <script setup>
 import { useForm } from '@inertiajs/vue3';
 
-const form = useForm({ accountReference: '' });
+const form = useForm({});
 const submit = () => form.post('/portfolio/onboarding');
 </script>
 
 <template>
     <main aria-labelledby="portfolio-onboarding-heading">
         <h1 id="portfolio-onboarding-heading">Set up your XTB portfolio</h1>
-        <p>Create an active XTB portfolio before importing a workbook or viewing valuations.</p>
+        <p>Create an active XTB portfolio before importing a workbook or viewing valuations. The selected portfolio receives imported transactions regardless of the account reference in the workbook.</p>
         <form @submit.prevent="submit">
-            <label>
-                XTB account reference
-                <input v-model="form.accountReference" autocomplete="off" required>
-            </label>
-            <p v-if="form.errors.accountReference" role="alert">{{ form.errors.accountReference }}</p>
             <button :disabled="form.processing" type="submit">Create active XTB portfolio</button>
         </form>
     </main>
