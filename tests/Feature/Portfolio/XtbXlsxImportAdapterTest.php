@@ -269,6 +269,7 @@ it('rejects non-canonical labeled cash comments when a direct cash field is miss
     'negative stock price' => 'STOCK SELL 2.00000000 @ -61.72500000',
     'stock equals delimiter' => 'STOCK BUY 2.00000000 = 61.72500000',
     'stock extra whitespace' => 'STOCK BUY  2.00000000 @ 61.72500000',
+    'stock action joined' => 'STOCKBUY 2.00000000 @ 61.72500000',
     'stock trailing text' => 'STOCK BUY 2.00000000 @ 61.72500000 settled',
     'stock unsupported operation' => 'STOCK HOLD 2.00000000 @ 61.72500000',
     'leading-zero quantity' => 'Quantity: 02; Price: 61.72500000',

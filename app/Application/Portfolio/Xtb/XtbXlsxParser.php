@@ -295,7 +295,7 @@ final class XtbXlsxParser
         // For the fractionable form the executed quantity is the part before "/",
         // e.g. "OPEN BUY 1/1.9272 @ 37.505" -> quantity 1; "OPEN BUY 0.9272/1.9272 @ 37.505" -> 0.9272.
         if (preg_match(
-            '/\A(?:Quantity: (?<labeledQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?); Price: (?<labeledPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)|(?:STOCK|OPEN|CLOSE) ?(?:BUY|SELL) (?<stockQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?:/(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)? @ (?<stockPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?))\z/D',
+            '/\A(?:Quantity: (?<labeledQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?); Price: (?<labeledPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)|(?:STOCK|OPEN|CLOSE) (?:BUY|SELL) (?<stockQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?:\/(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)? @ (?<stockPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?))\z/D',
             (string) $comment,
             $matches,
             PREG_UNMATCHED_AS_NULL,
