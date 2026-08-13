@@ -47,6 +47,26 @@ curl -i http://localhost:8086/health
 
 The `/` and `/health` endpoints return HTTP 200 when the web and application services are healthy.
 
+### Cloudflare HTTPS public origin
+
+The standard Compose stack is configured for the Cloudflare Tunnel public origin:
+`APP_URL=https://felio.codehappens.dev` and `APP_FORCE_HTTPS=true`. Laravel trusts
+forwarded proxy headers and forces generated absolute URLs to HTTPS, preventing
+an HTTPS page from receiving an HTTP login or registration redirect.
+
+For another public hostname, set both values before recreating the application
+and web services:
+
+```sh
+APP_URL=https://your-public-host.example APP_FORCE_HTTPS=true make up
+```
+
+For an intentionally HTTP-only local environment, explicitly override both:
+
+```sh
+APP_URL=http://localhost:8086 APP_FORCE_HTTPS=false make up
+```
+
 ### Apply migrations
 
 After the database is running, apply pending Laravel migrations:

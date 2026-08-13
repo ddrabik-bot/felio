@@ -21,6 +21,7 @@ use App\Infrastructure\MarketData\EloquentMarketDataPersistenceRepository;
 use App\Infrastructure\MarketData\LaravelYfinanceGateway;
 use App\Infrastructure\Portfolio\EloquentPortfolioImportRepository;
 use App\Infrastructure\Portfolio\EloquentPortfolioValuationReadRepository;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -49,6 +50,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+        if (config('app.force_https')) {
+            URL::forceRootUrl(config('app.url'));
+            URL::forceScheme('https');
+        }
     }
 }

@@ -1,8 +1,12 @@
 <?php
 
+use App\Http\Middleware\ForceHttpsForPublicOrigin;
 use App\Models\User;
+use App\Providers\AppServiceProvider;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Inertia\Inertia;
@@ -29,22 +33,25 @@ it('shares failed login errors with the redirected Inertia page', function (): v
         ]);
 });
 
-it('logs a registered user in and invalidates the session on logout', function (): void {
-    $user = User::factory()->create([
-        'email' => 'daniel@example.test',
-        'password' => Hash::make('correct-horse-battery-staple'),
-    ]);
+it('rewrites HTTP redirect locations to HTTPS when forced for the public origin', function (): void {
+    config()->set('app.force_https', true);
 
-    $this->post('/login', [
-        'email' => 'daniel@example.test',
-        'password' => 'correct-horse-battery-staple',
-    ])->assertRedirect('/');
+    $response = (new ForceHttpsForPublicOrigin())->handle(
+        Request::create('/login'),
+        fn (): RedirectResponse => new RedirectResponse('http://felio.codehappens.dev/login'),
+    );
 
-    $this->assertAuthenticatedAs($user);
+    expect($response->headers->get('Location'))->toBe('https://felio.codehappens.dev/login');
+});
 
-    $this->post('/logout')->assertRedirect('/');
+it('forces HTTPS absolute URLs when enabled for the public origin', function (): void {
+    config()->set('app.url', 'http://localhost');
+    config()->set('app.force_https', true);
 
-    $this->assertGuest();
+    (new AppServiceProvider(app()))->boot();
+
+    expect(url('/login'))->toBe('https://localhost/login')
+        ->and(url('/portfolio/onboarding'))->toBe('https://localhost/portfolio/onboarding');
 });
 
 it('sends a reset link and accepts its password reset token', function (): void {

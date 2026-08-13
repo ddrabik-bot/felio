@@ -10,7 +10,8 @@ services:
       APP_ENV: local
       APP_DEBUG: "true"
       APP_KEY: base64:Uu9pib5bVJrdUQJZ8OMO7pPqL3HP/3l4FiZNsWkubHY=
-      APP_URL: http://localhost:${FELIO_HTTP_PORT:-8086}
+      APP_URL: ${APP_URL:-https://felio.codehappens.dev}
+      APP_FORCE_HTTPS: ${APP_FORCE_HTTPS:-true}
       SESSION_DRIVER: file
       CACHE_STORE: file
       DB_CONNECTION: pgsql
