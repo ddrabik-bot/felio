@@ -6,7 +6,9 @@ use App\Domain\MarketData\CanonicalInstrument;
 use App\Domain\Portfolio\ImportBatch;
 use App\Domain\Portfolio\PortfolioImportRow;
 use App\Domain\Portfolio\PortfolioImportService;
+use App\Domain\Portfolio\PortfolioPositionProjection;
 use App\Domain\Portfolio\SourceRowStatus;
+use App\Domain\Valuation\Decimal;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -63,7 +65,10 @@ final readonly class XtbManualImportWorkflow
             $raw = json_decode($row->raw_values, true, 512, JSON_THROW_ON_ERROR);
             $status = SourceRowStatus::from($row->status);
             if ($status === SourceRowStatus::Pending && isset($canonicalMappings[$raw['xtb_symbol'] ?? ''])) {
-                $imports[] = PortfolioImportRow::valid($row->source_row_identity, $canonicalMappings[$raw['xtb_symbol']], $raw['xtb_quantity'], null, new DateTimeImmutable($row->as_of), $raw);
+                $cost = isset($raw['xtb_price']) && is_string($raw['xtb_price'])
+                    ? Decimal::plnToGrosze(Decimal::roundPlnGrosz($raw['xtb_price']))
+                    : null;
+                $imports[] = PortfolioImportRow::valid($row->source_row_identity, $canonicalMappings[$raw['xtb_symbol']], $raw['xtb_quantity'], $cost, new DateTimeImmutable($row->as_of), $raw);
             } elseif ($status === SourceRowStatus::Valid) {
                 $imports[] = PortfolioImportRow::valid($row->source_row_identity, new CanonicalInstrument($row->canonical_instrument), $row->quantity, $row->average_cost_pln_grosze, new DateTimeImmutable($row->as_of), $raw);
             } elseif ($status === SourceRowStatus::Pending) {
@@ -83,6 +88,11 @@ final readonly class XtbManualImportWorkflow
     public function delete(int $batchId): void
     {
         DB::transaction(function () use ($batchId): void {
+            $batch = DB::table('portfolio_import_batches')->where('id', $batchId)->first();
+            if ($batch === null) {
+                throw new InvalidArgumentException('Import batch not found.');
+            }
+            DB::table('portfolio_accounts')->where('id', $batch->portfolio_account_id)->lockForUpdate()->firstOrFail();
             $batch = DB::table('portfolio_import_batches')->where('id', $batchId)->lockForUpdate()->first();
             if ($batch === null) {
                 throw new InvalidArgumentException('Import batch not found.');
@@ -98,16 +108,26 @@ final readonly class XtbManualImportWorkflow
             ]);
             DB::table('portfolio_positions')->where('portfolio_account_id', $batch->portfolio_account_id)->delete();
             DB::table('portfolio_import_batches')->where('id', $batchId)->delete();
-            foreach (DB::table('portfolio_import_source_rows as rows')->join('portfolio_import_batches as batches', 'batches.id', '=', 'rows.portfolio_import_batch_id')->where('batches.portfolio_account_id', $batch->portfolio_account_id)->where('rows.status', SourceRowStatus::Valid->value)->orderByDesc('rows.as_of')->orderByDesc('rows.portfolio_import_batch_id')->orderByDesc('rows.id')->get() as $row) {
-                DB::table('portfolio_positions')->upsert([[
+            $rows = DB::table('portfolio_import_source_rows as rows')->join('portfolio_import_batches as batches', 'batches.id', '=', 'rows.portfolio_import_batch_id')->where('batches.portfolio_account_id', $batch->portfolio_account_id)->where('rows.status', SourceRowStatus::Valid->value)->orderBy('rows.as_of')->orderBy('batches.imported_at')->orderBy('batches.id')->orderBy('rows.id')->select(['rows.id', 'rows.canonical_instrument', 'rows.quantity', 'rows.average_cost_pln_grosze', 'rows.as_of', 'rows.raw_values', 'batches.id as batch_id'])->get();
+            $positions = PortfolioPositionProjection::rebuild($rows->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
+                'canonicalInstrument' => $row->canonical_instrument,
+                'quantity' => (string) $row->quantity,
+                'averageCostPlnGrosze' => $row->average_cost_pln_grosze === null ? null : (int) $row->average_cost_pln_grosze,
+                'asOf' => $row->as_of,
+                'sourceImportBatchId' => (int) $row->batch_id,
+                'rawValues' => json_decode($row->raw_values, true, 512, JSON_THROW_ON_ERROR),
+            ]));
+            if ($positions !== []) {
+                DB::table('portfolio_positions')->insert(array_map(static fn (array $position): array => [
                     'portfolio_account_id' => $batch->portfolio_account_id,
-                    'canonical_instrument' => $row->canonical_instrument,
-                    'quantity' => $row->quantity,
-                    'average_cost_pln_grosze' => $row->average_cost_pln_grosze,
-                    'as_of' => $row->as_of,
-                    'source_import_batch_id' => $row->portfolio_import_batch_id,
+                    'canonical_instrument' => $position['canonicalInstrument'],
+                    'quantity' => $position['quantity'],
+                    'average_cost_pln_grosze' => $position['averageCostPlnGrosze'],
+                    'as_of' => $position['asOf'],
+                    'source_import_batch_id' => $position['sourceImportBatchId'],
                     'created_at' => now(), 'updated_at' => now(),
-                ]], ['portfolio_account_id', 'canonical_instrument'], []);
+                ], $positions));
             }
         });
     }

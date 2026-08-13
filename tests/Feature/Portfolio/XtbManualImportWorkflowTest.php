@@ -7,6 +7,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Process\Process;
 
 uses(DatabaseMigrations::class);
 
@@ -69,7 +70,7 @@ it('previews a local XTB upload without persistence and requires confirmation be
         ->and(DB::table('portfolio_import_source_rows')->where('diagnostic', 'unsupported_closed_position')->count())->toBe(1)
         ->and(DB::table('portfolio_import_source_rows')->where('raw_values->sheet', 'Closed Positions')->count())->toBe(1)
         ->and(DB::table('portfolio_import_source_rows')->where('raw_values->sheet', 'Closed Positions')->whereNotNull('canonical_instrument')->count())->toBe(0)
-        ->and(DB::table('portfolio_positions')->count())->toBe(1);
+        ->and(DB::table('portfolio_positions')->count())->toBe(0);
 
     expect(Storage::disk('local')->allFiles())->toBe([]);
     assertNoImportLogs($logger);
@@ -204,8 +205,36 @@ it('persists unmapped valid rows as pending and can reprocess them without re-up
 
     expect(DB::table('portfolio_import_source_rows')->where('status', 'valid')->count())->toBe(2)
         ->and(DB::table('portfolio_import_source_rows')->where('status', 'rejected')->count())->toBe(2)
-        ->and(DB::table('portfolio_positions')->count())->toBe(1)
+        ->and(DB::table('portfolio_positions')->count())->toBe(0)
         ->and(DB::table('portfolio_import_source_rows')->where('status', 'rejected')->whereNotNull('canonical_instrument')->count())->toBe(0);
+});
+
+it('reprocesses a legacy pending XTB row without a persisted price as a cost-unavailable position', function (): void {
+    $batchId = DB::table('portfolio_import_batches')->insertGetId([
+        'portfolio_account_id' => $this->activePortfolioId,
+        'source_batch_identity' => 'legacy-pre-price-xtb',
+        'imported_at' => now(),
+        'status' => 'COMPLETED_WITH_WARNINGS',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('portfolio_import_source_rows')->insert([
+        'portfolio_import_batch_id' => $batchId,
+        'source_row_identity' => 'legacy-pre-price-row',
+        'status' => 'pending',
+        'as_of' => '2026-08-01T00:00:00+00:00',
+        'raw_values' => json_encode(['xtb_symbol' => 'PZU', 'xtb_quantity' => '2', 'xtb_operation' => 'buy'], JSON_THROW_ON_ERROR),
+        'diagnostic' => 'canonical_instrument_unresolved',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    reprocessXtbImport($this, $batchId, ['PZU' => 'PZU.PL'])->assertOk()
+        ->assertJsonPath('status', 'COMPLETED');
+
+    $position = DB::table('portfolio_positions')->where('portfolio_account_id', $this->activePortfolioId)->first();
+    expect($position->quantity)->toBe('2')
+        ->and($position->average_cost_pln_grosze)->toBeNull();
 });
 
 it('keeps confirmation idempotent across repeated uploads of the same workbook', function (): void {
@@ -219,7 +248,7 @@ it('keeps confirmation idempotent across repeated uploads of the same workbook',
         ->and(DB::table('portfolio_accounts')->count())->toBe(1)
         ->and(DB::table('portfolio_import_batches')->count())->toBe(1)
         ->and(DB::table('portfolio_import_source_rows')->count())->toBe(4)
-        ->and(DB::table('portfolio_positions')->count())->toBe(1);
+        ->and(DB::table('portfolio_positions')->count())->toBe(0);
 });
 
 it('deletes an entire import batch only after recording its recalculation boundary', function (): void {
@@ -238,6 +267,66 @@ it('deletes an entire import batch only after recording its recalculation bounda
         ->and(DB::table('portfolio_positions')->count())->toBe(0)
         ->and(DB::table('portfolio_import_recalculation_boundaries')->count())->toBe(1)
         ->and(DB::table('portfolio_import_recalculation_boundaries')->value('deleted_import_batch_id'))->toBe($batchId);
+});
+
+it('serializes concurrent deletion and rebuild of distinct batches for one portfolio account', function (): void {
+    expect(DB::getDriverName())->toBe('pgsql');
+
+    $preparer = new Process([PHP_BINARY, base_path('tests/Fixtures/Portfolio/PrepareXtbBatchDeletionWorker.php')], base_path());
+    $preparer->run();
+    expect($preparer->getExitCode(), $preparer->getErrorOutput())->toBe(0);
+    $prepared = json_decode($preparer->getOutput(), true, 512, JSON_THROW_ON_ERROR);
+    $portfolioAccountId = $prepared['portfolioAccountId'];
+    $batchIds = $prepared['batchIds'];
+    $barrier = tempnam(sys_get_temp_dir(), 'felio-delete-rebuild-');
+    unlink($barrier);
+    $worker = base_path('tests/Fixtures/Portfolio/DeleteXtbImportBatchWorker.php');
+    $processes = array_map(static fn (int $batchId): Process => new Process([PHP_BINARY, $worker, (string) $batchId, $barrier], base_path()), $batchIds);
+
+    try {
+        foreach ($processes as $process) {
+            $process->start();
+        }
+
+        $deadline = microtime(true) + 10;
+        while (count(glob("{$barrier}.*.ready")) !== count($processes) && microtime(true) < $deadline) {
+            usleep(10_000);
+        }
+
+        expect(glob("{$barrier}.*.ready"))->toHaveCount(count($processes));
+        touch($barrier);
+
+        foreach ($processes as $process) {
+            $process->wait();
+            if ($process->getExitCode() !== 0) {
+                throw new RuntimeException($process->getErrorOutput());
+            }
+        }
+
+        $verifier = new Process([
+            PHP_BINARY,
+            base_path('tests/Fixtures/Portfolio/VerifyXtbBatchDeletionWorker.php'),
+            (string) $portfolioAccountId,
+            ...array_map(static fn (int $batchId): string => (string) $batchId, $batchIds),
+        ], base_path());
+        $verifier->run();
+
+        if ($verifier->getExitCode() !== 0) {
+            throw new RuntimeException($verifier->getErrorOutput());
+        }
+    } finally {
+        touch($barrier);
+
+        foreach ($processes as $process) {
+            if ($process->isRunning()) {
+                $process->stop();
+            }
+        }
+
+        foreach (glob("{$barrier}*") as $path) {
+            unlink($path);
+        }
+    }
 });
 
 function unresolvedRelationshipWorkbookContents(): string

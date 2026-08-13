@@ -302,8 +302,8 @@ it('persists explicit cash-trade mappings idempotently while isolating rejected 
         ->and(DB::table('portfolio_import_batches')->count())->toBe(1)
         ->and(DB::table('portfolio_import_source_rows')->count())->toBe(4)
         ->and(DB::table('portfolio_import_source_rows')->where('status', 'rejected')->count())->toBe(2)
-        ->and(DB::table('portfolio_positions')->count())->toBe(1)
-        ->and(DB::table('portfolio_positions')->value('canonical_instrument'))->toBe('PZU.PL');
+        ->and(DB::table('portfolio_positions')->count())->toBe(0)
+        ->and(DB::table('portfolio_import_source_rows')->where('status', 'valid')->count())->toBe(2);
 });
 
 it('rejects otherwise valid cash trades without an explicit canonical mapping', function (): void {

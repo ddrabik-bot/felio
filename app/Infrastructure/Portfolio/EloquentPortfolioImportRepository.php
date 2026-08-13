@@ -5,6 +5,7 @@ namespace App\Infrastructure\Portfolio;
 use App\Domain\Portfolio\ImportBatch;
 use App\Domain\Portfolio\PortfolioImportRepository;
 use App\Domain\Portfolio\PortfolioImportRow;
+use App\Domain\Portfolio\PortfolioPositionProjection;
 use App\Domain\Portfolio\SourceRowStatus;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -27,11 +28,8 @@ final class EloquentPortfolioImportRepository implements PortfolioImportReposito
 
             foreach ($rows as $row) {
                 $this->upsertSourceRow($batchId, $row, $now);
-
-                if ($row->status === SourceRowStatus::Valid) {
-                    $this->upsertPosition($accountId, $batchId, $row, $now);
-                }
             }
+            $this->rebuildPositions($accountId, $now);
         });
     }
 
@@ -53,11 +51,8 @@ final class EloquentPortfolioImportRepository implements PortfolioImportReposito
 
             foreach ($rows as $row) {
                 $this->upsertSourceRow($batchId, $row, $now);
-
-                if ($row->status === SourceRowStatus::Valid) {
-                    $this->upsertPosition($portfolioAccountId, $batchId, $row, $now);
-                }
             }
+            $this->rebuildPositions($portfolioAccountId, $now);
         });
     }
 
@@ -111,20 +106,46 @@ final class EloquentPortfolioImportRepository implements PortfolioImportReposito
         ]);
     }
 
-    private function upsertPosition(int $accountId, int $batchId, PortfolioImportRow $row, Carbon $now): void
+    private function rebuildPositions(int $accountId, Carbon $now): void
     {
-        DB::table('portfolio_positions')->upsert([[
+        DB::table('portfolio_accounts')->where('id', $accountId)->lockForUpdate()->first();
+        $rows = DB::table('portfolio_import_source_rows as rows')
+            ->join('portfolio_import_batches as batches', 'batches.id', '=', 'rows.portfolio_import_batch_id')
+            ->where('batches.portfolio_account_id', $accountId)
+            ->where('rows.status', SourceRowStatus::Valid->value)
+            ->whereNotNull('rows.canonical_instrument')
+            ->orderBy('rows.as_of')
+            ->orderBy('batches.imported_at')
+            ->orderBy('batches.id')
+            ->orderBy('rows.id')
+            ->select(['rows.id', 'rows.canonical_instrument', 'rows.quantity', 'rows.average_cost_pln_grosze', 'rows.as_of', 'rows.raw_values', 'batches.id as batch_id'])
+            ->get()
+            ->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
+                'canonicalInstrument' => $row->canonical_instrument,
+                'quantity' => (string) $row->quantity,
+                'averageCostPlnGrosze' => $row->average_cost_pln_grosze === null ? null : (int) $row->average_cost_pln_grosze,
+                'asOf' => $row->as_of,
+                'sourceImportBatchId' => (int) $row->batch_id,
+                'rawValues' => json_decode($row->raw_values, true, 512, JSON_THROW_ON_ERROR),
+            ]);
+        $positions = PortfolioPositionProjection::rebuild($rows);
+
+        DB::table('portfolio_positions')->where('portfolio_account_id', $accountId)->delete();
+        if ($positions === []) {
+            return;
+        }
+
+        DB::table('portfolio_positions')->insert(array_map(static fn (array $position): array => [
             'portfolio_account_id' => $accountId,
-            'canonical_instrument' => $row->instrument?->value,
-            'quantity' => $row->quantity,
-            'average_cost_pln_grosze' => $row->averageCostPlnGrosze,
-            'as_of' => $row->asOf,
-            'source_import_batch_id' => $batchId,
+            'canonical_instrument' => $position['canonicalInstrument'],
+            'quantity' => $position['quantity'],
+            'average_cost_pln_grosze' => $position['averageCostPlnGrosze'],
+            'as_of' => $position['asOf'],
+            'source_import_batch_id' => $position['sourceImportBatchId'],
             'created_at' => $now,
             'updated_at' => $now,
-        ]], ['portfolio_account_id', 'canonical_instrument'], [
-            'quantity', 'average_cost_pln_grosze', 'as_of', 'source_import_batch_id', 'updated_at',
-        ]);
+        ], $positions));
     }
 
     /** @param array<string, mixed> $values */

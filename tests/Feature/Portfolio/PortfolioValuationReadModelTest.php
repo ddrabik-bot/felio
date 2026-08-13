@@ -55,6 +55,22 @@ it('reads a historical source-row position as of an explicit date after a later 
         ->and($read->totalPlnGrosze)->toBe(2000);
 });
 
+it('reads the same aggregate XTB trade position in historical valuation instead of using a last source row', function (): void {
+    $rows = [];
+    for ($index = 1; $index <= 22; $index++) {
+        $quantity = $index <= 16 ? '2' : '1';
+        $price = $index <= 16 ? 1000 : 2000;
+        $rows[] = PortfolioImportRow::valid("xtb-history-{$index}", new CanonicalInstrument('XTB.PL'), $quantity, $price, new DateTimeImmutable(sprintf('2026-08-%02dT00:00:00+00:00', $index)), ['xtb_operation' => 'buy', 'xtb_price' => (string) bcdiv((string) $price, '100', 2)]);
+    }
+
+    app(PortfolioImportService::class)->persist(new ImportBatch('xtb', 'valuation-account', 'xtb-history-aggregate', new DateTimeImmutable('2026-08-22T00:00:00+00:00')), $rows);
+
+    $read = valuation()->read(new DateTimeImmutable('2026-08-22T20:00:00+00:00'), valuationAccountId());
+
+    expect($read->rows)->toHaveCount(1)
+        ->and($read->rows[0]->quantity)->toBe('38');
+});
+
 it('uses only exact-date market and FX observations and preserves unavailable diagnostics', function (): void {
     importPosition('foreign', '2026-01-02T00:00:00+01:00', 'ACME.US', '3');
     price('ACME.US', '2026-01-02', 'USD', '10');

@@ -98,6 +98,74 @@ it('enforces one normalized position per account and canonical instrument', func
     ]))->toThrow(QueryException::class);
 });
 
+it('aggregates ordered XTB trades into a single net position with an exact weighted average cost', function (): void {
+    $rows = [];
+    for ($index = 1; $index <= 22; $index++) {
+        $quantity = $index <= 16 ? '2' : '1';
+        $price = $index <= 16 ? 1000 : 2000;
+        $rows[] = PortfolioImportRow::valid("xtb-order-{$index}", new CanonicalInstrument('XTB.PL'), $quantity, $price, new DateTimeImmutable(sprintf('2026-08-%02dT00:00:00+00:00', $index)), ['xtb_operation' => 'buy', 'xtb_price' => (string) bcdiv((string) $price, '100', 2)]);
+    }
+
+    app(PortfolioImportService::class)->persist(portfolioImportBatch('xtb-aggregate-22-rows'), $rows);
+
+    $position = DB::table('portfolio_positions')->where('canonical_instrument', 'XTB.PL')->first();
+
+    expect($position->quantity)->toBe('38')
+        ->and($position->average_cost_pln_grosze)->toBe(1157);
+});
+
+it('applies XTB sells to the net quantity without changing the weighted average cost of remaining shares', function (): void {
+    app(PortfolioImportService::class)->persist(portfolioImportBatch('xtb-buy-sell'), [
+        PortfolioImportRow::valid('xtb-buy', new CanonicalInstrument('XTB.PL'), '10', 1000, new DateTimeImmutable('2026-08-01T00:00:00+00:00'), ['xtb_operation' => 'buy', 'xtb_price' => '10']),
+        PortfolioImportRow::valid('xtb-sell', new CanonicalInstrument('XTB.PL'), '4', 9999, new DateTimeImmutable('2026-08-02T00:00:00+00:00'), ['xtb_operation' => 'sell', 'xtb_price' => '99.99']),
+    ]);
+
+    $position = DB::table('portfolio_positions')->where('canonical_instrument', 'XTB.PL')->first();
+
+    expect($position->quantity)->toBe('6')
+        ->and($position->average_cost_pln_grosze)->toBe(1000);
+});
+
+it('retains a fractional XTB weighted cost basis through a partial sell before a later buy', function (): void {
+    app(PortfolioImportService::class)->persist(portfolioImportBatch('xtb-fractional-buy-sell-buy'), [
+        PortfolioImportRow::valid('xtb-buy-one', new CanonicalInstrument('XTB.PL'), '0.1', 1000, new DateTimeImmutable('2026-08-01T00:00:00+00:00'), ['xtb_operation' => 'buy']),
+        PortfolioImportRow::valid('xtb-buy-two', new CanonicalInstrument('XTB.PL'), '0.1', 1001, new DateTimeImmutable('2026-08-02T00:00:00+00:00'), ['xtb_operation' => 'buy']),
+        PortfolioImportRow::valid('xtb-partial-sell', new CanonicalInstrument('XTB.PL'), '0.1', 9999, new DateTimeImmutable('2026-08-03T00:00:00+00:00'), ['xtb_operation' => 'sell']),
+        PortfolioImportRow::valid('xtb-buy-three', new CanonicalInstrument('XTB.PL'), '0.1', 995, new DateTimeImmutable('2026-08-04T00:00:00+00:00'), ['xtb_operation' => 'buy']),
+    ]);
+
+    $position = DB::table('portfolio_positions')->where('canonical_instrument', 'XTB.PL')->first();
+
+    expect($position->quantity)->toBe('0.2')
+        ->and($position->average_cost_pln_grosze)->toBe(997);
+});
+
+it('keeps non-XTB source rows as latest-snapshot overwrites rather than net trade accumulation', function (): void {
+    app(PortfolioImportService::class)->persist(portfolioImportBatch('generic-snapshots'), [
+        PortfolioImportRow::valid('snapshot-one', new CanonicalInstrument('PZU.PL'), '2', 1000, new DateTimeImmutable('2026-08-01T00:00:00+00:00'), ['source' => 'generic']),
+        PortfolioImportRow::valid('snapshot-two', new CanonicalInstrument('PZU.PL'), '5', 2000, new DateTimeImmutable('2026-08-02T00:00:00+00:00'), ['source' => 'generic']),
+    ]);
+
+    $position = DB::table('portfolio_positions')->where('canonical_instrument', 'PZU.PL')->first();
+
+    expect($position->quantity)->toBe('5')
+        ->and($position->average_cost_pln_grosze)->toBe(2000);
+});
+
+it('retains a non-XTB snapshot cost basis when a later XTB buy is aggregated', function (): void {
+    app(PortfolioImportService::class)->persist(portfolioImportBatch('generic-snapshot-then-xtb-buy'), [
+        PortfolioImportRow::valid('generic-snapshot', new CanonicalInstrument('PZU.PL'), '2', 1000, new DateTimeImmutable('2026-08-01T00:00:00+00:00'), ['source' => 'generic']),
+        PortfolioImportRow::valid('xtb-buy', new CanonicalInstrument('PZU.PL'), '1', 2000, new DateTimeImmutable('2026-08-02T00:00:00+00:00'), ['xtb_operation' => 'buy', 'xtb_price' => '20']),
+    ]);
+
+    $position = DB::table('portfolio_positions')->where('canonical_instrument', 'PZU.PL')->first();
+
+    expect($position->quantity)->toBe('3')
+        ->and($position->average_cost_pln_grosze)->toBe(1333)
+        ->and($position->as_of)->toBe('2026-08-02 00:00:00+00')
+        ->and($position->source_import_batch_id)->toBe(DB::table('portfolio_import_batches')->where('source_batch_identity', 'generic-snapshot-then-xtb-buy')->value('id'));
+});
+
 it('keeps one source row and normalized position when PostgreSQL workers persist it concurrently', function (): void {
     expect(DB::getDriverName())->toBe('pgsql');
 

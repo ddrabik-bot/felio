@@ -7,6 +7,7 @@ use App\Domain\Portfolio\ImportBatch;
 use App\Domain\Portfolio\PortfolioImportRow;
 use App\Domain\Portfolio\PortfolioImportService;
 use App\Domain\Portfolio\SourceRowStatus;
+use App\Domain\Valuation\Decimal;
 use DateTimeImmutable;
 use InvalidArgumentException;
 
@@ -35,12 +36,14 @@ final readonly class XtbPortfolioImportAdapter
                 'xtb_symbol' => $parsed->symbol,
                 'xtb_operation' => $parsed->operation,
                 'xtb_quantity' => $parsed->quantity,
+                'xtb_price' => $parsed->price,
                 ...$parsed->rawValues,
             ];
             $identity = PortfolioImportRow::deterministicIdentity($rawValues, $parsed->sourceRowReference);
             $instrument = $parsed->symbol === null ? null : ($explicitInstrumentMappings[$parsed->symbol] ?? null);
             if ($parsed->isValidCashTrade() && $instrument !== null) {
-                $rows[] = PortfolioImportRow::valid($identity, $instrument, $parsed->quantity, null, $parsed->asOf, $rawValues);
+                $cost = Decimal::plnToGrosze(Decimal::roundPlnGrosz((string) $parsed->price));
+                $rows[] = PortfolioImportRow::valid($identity, $instrument, $parsed->quantity, $cost, $parsed->asOf, $rawValues);
 
                 continue;
             }

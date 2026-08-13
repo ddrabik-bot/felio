@@ -4,6 +4,7 @@ namespace App\Infrastructure\Portfolio;
 
 use App\Domain\Fx\FxRateAvailability;
 use App\Domain\Fx\FxRateResult;
+use App\Domain\Portfolio\PortfolioPositionProjection;
 use App\Domain\Portfolio\PortfolioValuationPosition;
 use App\Domain\Portfolio\PortfolioValuationReadRepository;
 use App\Domain\Valuation\PriceQuote;
@@ -19,30 +20,36 @@ final class EloquentPortfolioValuationReadRepository implements PortfolioValuati
         $asOf = $valuationDate->format('Y-m-d').'T23:59:59+00:00';
         $rows = DB::table('portfolio_import_source_rows as rows')
             ->join('portfolio_import_batches as batches', 'batches.id', '=', 'rows.portfolio_import_batch_id')
-            ->select(['rows.id', 'batches.portfolio_account_id', 'rows.canonical_instrument', 'rows.quantity', 'rows.average_cost_pln_grosze', 'rows.as_of', 'batches.imported_at', 'batches.id as batch_id'])
+            ->select(['rows.id', 'batches.portfolio_account_id', 'rows.canonical_instrument', 'rows.quantity', 'rows.average_cost_pln_grosze', 'rows.as_of', 'rows.raw_values', 'batches.imported_at', 'batches.id as batch_id'])
             ->where('rows.status', 'valid')
             ->whereNotNull('rows.canonical_instrument')
             ->where('batches.portfolio_account_id', $portfolioAccountId)
             ->where('rows.as_of', '<=', $asOf)
             ->orderBy('batches.portfolio_account_id')
             ->orderBy('rows.canonical_instrument')
-            ->orderByDesc('rows.as_of')
-            ->orderByDesc('batches.imported_at')
-            ->orderByDesc('batches.id')
-            ->orderByDesc('rows.id')
+            ->orderBy('rows.as_of')
+            ->orderBy('batches.imported_at')
+            ->orderBy('batches.id')
+            ->orderBy('rows.id')
             ->get();
 
-        $positions = [];
-        foreach ($rows as $row) {
-            $key = $row->portfolio_account_id."\x1f".$row->canonical_instrument;
-            if (isset($positions[$key])) {
-                continue;
-            }
+        $projection = PortfolioPositionProjection::rebuild($rows->map(static fn (object $row): array => [
+            'id' => (int) $row->id,
+            'canonicalInstrument' => $row->canonical_instrument,
+            'quantity' => (string) $row->quantity,
+            'averageCostPlnGrosze' => $row->average_cost_pln_grosze === null ? null : (int) $row->average_cost_pln_grosze,
+            'asOf' => $row->as_of,
+            'sourceImportBatchId' => (int) $row->batch_id,
+            'rawValues' => json_decode($row->raw_values, true, 512, JSON_THROW_ON_ERROR),
+        ]));
 
-            $positions[$key] = new PortfolioValuationPosition((int) $row->id, (int) $row->portfolio_account_id, $row->canonical_instrument, (string) $row->quantity, $row->average_cost_pln_grosze === null ? null : (int) $row->average_cost_pln_grosze);
-        }
-
-        return array_values($positions);
+        return array_map(static fn (array $position): PortfolioValuationPosition => new PortfolioValuationPosition(
+            $position['id'],
+            $portfolioAccountId,
+            $position['canonicalInstrument'],
+            $position['quantity'],
+            $position['averageCostPlnGrosze'],
+        ), array_values($projection));
     }
 
     public function priceFor(string $canonicalInstrument, DateTimeImmutable $valuationDate): PriceQuote
