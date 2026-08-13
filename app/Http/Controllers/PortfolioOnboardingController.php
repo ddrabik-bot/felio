@@ -28,10 +28,10 @@ final class PortfolioOnboardingController extends Controller
 
         $validated = $request->validate([
             'accountReference' => [
-                'required',
+                'nullable',
                 'string',
                 'max:255',
-                Rule::unique('portfolio_accounts', 'account_reference')->where('broker', 'xtb'),
+                Rule::unique('portfolio_accounts', 'account_reference')->where('broker', 'xtb')->ignore(null, 'account_reference'),
             ],
         ]);
 
@@ -44,10 +44,14 @@ final class PortfolioOnboardingController extends Controller
                 return;
             }
 
+            $accountReference = ($validated['accountReference'] ?? null) !== null && ($validated['accountReference'] ?? '') !== ''
+                ? $validated['accountReference']
+                : null;
+
             DB::table('portfolio_accounts')->insert([
                 'user_id' => $userId,
                 'broker' => 'xtb',
-                'account_reference' => $validated['accountReference'],
+                'account_reference' => $accountReference,
                 'is_active' => true,
                 'created_at' => now(),
                 'updated_at' => now(),

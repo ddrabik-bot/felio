@@ -42,9 +42,9 @@ final class XtbManualImportController extends Controller
             Storage::disk('local')->delete($path);
             throw $exception;
         }
-        if ($active->broker !== 'xtb' || $active->account_reference !== $analysis->accountReference) {
+        if ($active->broker !== 'xtb') {
             Storage::disk('local')->delete($path);
-            throw new InvalidArgumentException('The XTB workbook does not belong to the active portfolio.');
+            throw new InvalidArgumentException('The active portfolio is not an XTB portfolio.');
         }
         $statusHistory = ['UPLOADED', 'ANALYZING', 'READY_FOR_CONFIRMATION'];
         $request->session()->put($this->key($importId), compact('path', 'statusHistory') + ['portfolioAccountId' => $active->id]);
@@ -79,7 +79,7 @@ final class XtbManualImportController extends Controller
         $request->session()->forget($this->key($importId));
         $statusHistory = [...$statusHistory, 'CONFIRMED', 'PROCESSING'];
         try {
-            $result = $workflow->confirm($draft['path'], $request->input('mappings', []));
+            $result = $workflow->confirm($draft['path'], $request->input('mappings', []), $active->id);
         } catch (Throwable $exception) {
             return response()->json(['status' => 'FAILED', 'statusHistory' => [...$statusHistory, 'FAILED'], 'errors' => ['workbook' => [$exception instanceof InvalidArgumentException ? $exception->getMessage() : 'The XTB workbook could not be processed.']]], $exception instanceof InvalidArgumentException ? 422 : 500);
         }

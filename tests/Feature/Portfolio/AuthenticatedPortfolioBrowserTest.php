@@ -71,6 +71,20 @@ it('onboards a registered user into an active XTB portfolio before the browser i
         ->assertJsonPath('summary.pending', 0);
 });
 
+it('onboards an active XTB portfolio without an account reference', function (): void {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->post('/portfolio/onboarding', [])
+        ->assertRedirect('/portfolio/imports/xtb');
+
+    expect(DB::table('portfolio_accounts')
+        ->where('user_id', $user->id)
+        ->where('broker', 'xtb')
+        ->whereNull('account_reference')
+        ->where('is_active', true)
+        ->count())->toBe(1);
+});
+
 it('keeps exactly one active portfolio when PostgreSQL onboarding requests race', function (): void {
     expect(DB::getDriverName())->toBe('pgsql');
 
@@ -150,10 +164,10 @@ it('binds the valuation dashboard to the authenticated user active portfolio', f
         );
 });
 
-it('keeps the browser upload preview confirmation and batches inside the active portfolio', function (): void {
+it('uploads an XTB workbook with a different file account reference and persists it to the active portfolio', function (): void {
     Storage::fake('local');
     $user = User::factory()->create();
-    $accountId = activePortfolioFor($user, 'XTB-SYNTHETIC-001');
+    $accountId = activePortfolioFor($user, 'XTB-ACTIVE-PORTFOLIO-999');
 
     $upload = $this->actingAs($user)->postJson('/portfolio/imports/xtb', ['workbook' => sanitizedXtbUpload()]);
     $upload->assertCreated()
@@ -167,7 +181,8 @@ it('keeps the browser upload preview confirmation and batches inside the active 
         ->assertOk()
         ->assertJsonPath('status', 'COMPLETED_WITH_WARNINGS');
 
-    expect(DB::table('portfolio_import_batches')->where('portfolio_account_id', $accountId)->count())->toBe(1);
+    expect(DB::table('portfolio_import_batches')->where('portfolio_account_id', $accountId)->count())->toBe(1)
+        ->and(DB::table('portfolio_accounts')->where('user_id', $user->id)->count())->toBe(1);
 
     $this->actingAs($user)->get('/portfolio/imports/xtb')
         ->assertOk()

@@ -11,4 +11,10 @@ final readonly class PortfolioImportService
     {
         $this->repository->persist($batch, $rows);
     }
+
+    /** @param list<PortfolioImportRow> $rows */
+    public function persistToAccount(ImportBatch $batch, array $rows, int $portfolioAccountId): void
+    {
+        $this->repository->persistToAccount($batch, $rows, $portfolioAccountId);
+    }
 }

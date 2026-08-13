@@ -35,6 +35,32 @@ final class EloquentPortfolioImportRepository implements PortfolioImportReposito
         });
     }
 
+    /** @param list<PortfolioImportRow> $rows */
+    public function persistToAccount(ImportBatch $batch, array $rows, int $portfolioAccountId): void
+    {
+        $identities = array_map(static fn (PortfolioImportRow $row): string => $row->sourceRowIdentity, $rows);
+        if (count($identities) !== count(array_unique($identities))) {
+            throw new \InvalidArgumentException('A batch cannot contain duplicate source row identities.');
+        }
+
+        DB::transaction(function () use ($batch, $rows, $portfolioAccountId): void {
+            $now = now();
+            $accountExists = DB::table('portfolio_accounts')->where('id', $portfolioAccountId)->exists();
+            if (! $accountExists) {
+                throw new \InvalidArgumentException('Portfolio account not found.');
+            }
+            $batchId = $this->upsertBatch($batch, $portfolioAccountId, $now);
+
+            foreach ($rows as $row) {
+                $this->upsertSourceRow($batchId, $row, $now);
+
+                if ($row->status === SourceRowStatus::Valid) {
+                    $this->upsertPosition($portfolioAccountId, $batchId, $row, $now);
+                }
+            }
+        });
+    }
+
     private function upsertAccount(ImportBatch $batch, Carbon $now): int
     {
         DB::table('portfolio_accounts')->upsert([[
