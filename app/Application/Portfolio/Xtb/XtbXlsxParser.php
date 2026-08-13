@@ -287,7 +287,19 @@ final class XtbXlsxParser
     /** @return array{quantity: string, price: string}|null */
     private function labeledTradeComment(?string $comment): ?array
     {
-        if (preg_match('/\A(?:Quantity: (?<labeledQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?); Price: (?<labeledPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)|STOCK (?:BUY|SELL) (?<stockQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?) @ (?<stockPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?))\z/D', (string) $comment, $matches, PREG_UNMATCHED_AS_NULL) !== 1) {
+        // Accept three strict forms (exact decimals, no float, no leading zeros,
+        // no comma decimals, no trailing text):
+        //  - Quantity: X; Price: Y
+        //  - STOCK (BUY|SELL) X @ Y
+        //  - [STOCK | OPEN | CLOSE] (BUY|SELL) X [ / total ] @ Y     (Polish XTB wording)
+        // For the fractionable form the executed quantity is the part before "/",
+        // e.g. "OPEN BUY 1/1.9272 @ 37.505" -> quantity 1; "OPEN BUY 0.9272/1.9272 @ 37.505" -> 0.9272.
+        if (preg_match(
+            '/\A(?:Quantity: (?<labeledQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?); Price: (?<labeledPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)|(?:STOCK|OPEN|CLOSE) ?(?:BUY|SELL) (?<stockQuantity>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)(?:/(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)? @ (?<stockPrice>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?))\z/D',
+            (string) $comment,
+            $matches,
+            PREG_UNMATCHED_AS_NULL,
+        ) !== 1) {
             return null;
         }
 

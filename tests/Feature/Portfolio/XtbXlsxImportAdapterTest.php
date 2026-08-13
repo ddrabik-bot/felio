@@ -201,6 +201,53 @@ it('accepts complete direct cash fields without interpreting an unsupported comm
     }
 });
 
+it('accepts Polish XTB OPEN/CLOSE buy/sell labeled comments', function (string $comment, string $expectedQty, string $expectedPrice): void {
+    $path = sanitizedXtbWorkbookWithCashRows([['comment' => $comment]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBe($expectedQty)
+            ->and($row->price)->toBe($expectedPrice)
+            ->and($row->diagnostic)->toBeNull();
+    } finally {
+        @unlink($path);
+    }
+})->with([
+    'open buy simple' => ['OPEN BUY 0.1657 @ 85.2180', '0.1657', '85.2180'],
+    'open buy fraction' => ['OPEN BUY 1/1.9272 @ 37.505', '1', '37.505'],
+    'open buy fraction partial' => ['OPEN BUY 0.9272/1.9272 @ 37.505', '0.9272', '37.505'],
+    'close sell simple' => ['CLOSE SELL 4 @ 5.4040', '4', '5.4040'],
+    'open sell fractional' => ['OPEN SELL 0.1216 @ 97.7060', '0.1216', '97.7060'],
+    'close buy integer' => ['CLOSE BUY 2.00000000 @ 61.72500000', '2.00000000', '61.72500000'],
+]);
+
+it('rejects malformed Polish XTB OPEN/CLOSE comments', function (string $comment): void {
+    $path = sanitizedXtbWorkbookWithCashRows([['comment' => $comment]]);
+
+    try {
+        $row = (new XtbXlsxParser)->parse($path)->rows[0];
+
+        expect($row->quantity)->toBeNull()
+            ->and($row->price)->toBeNull()
+            ->and($row->diagnostic)->toBe('invalid_or_missing_labeled_trade_comment');
+    } finally {
+        @unlink($path);
+    }
+})->with([
+    'open zero quantity' => 'OPEN BUY 0 @ 61.72500000',
+    'open negative quantity' => 'OPEN BUY -2 @ 61.72500000',
+    'open negative price' => 'OPEN BUY 2 @ -61.72500000',
+    'open comma decimal' => 'OPEN BUY 2,00000000 @ 61.72500000',
+    'open trailing text' => 'OPEN BUY 2 @ 61.72500000 settled',
+    'open equals delimiter' => 'OPEN BUY 2 @ = 61.72500000',
+    'open symbol missing' => 'OPEN BUY 2',
+    'open unsupported action' => 'OPEN HOLD 2 @ 61.72500000',
+    'close zero quantity' => 'CLOSE SELL 0 @ 61.72500000',
+    'close negative price' => 'CLOSE SELL 2 @ -61.72500000',
+    'combined words' => 'OPEN CLOSE BUY 2 @ 61.72500000',
+]);
+
 it('rejects non-canonical labeled cash comments when a direct cash field is missing', function (string $comment): void {
     $path = sanitizedXtbWorkbookWithCashRows([['comment' => $comment]]);
 
