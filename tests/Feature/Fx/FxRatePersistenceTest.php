@@ -58,19 +58,87 @@ it('upserts an available FX rate and preserves its exact decimal source value', 
         ->and(collect($queries)->contains(static fn (string $sql): bool => str_contains($sql, 'on conflict')))->toBeTrue();
 });
 
-it('keeps available, stale, and unavailable FX observations observable without a date fallback', function (): void {
+it('keeps an exact available FX rate canonical when a stale observation is persisted later', function (): void {
     $service = app(FxRatePersistenceService::class);
 
     $service->persist(fxRateResult());
     $service->persist(fxRateResult(FxRateAvailability::Stale, '2026-07-31', '3.90000000000000000001', 'effective_date_before_as_of_date'));
-    $service->persist(fxRateResult(FxRateAvailability::Unavailable, null, null, 'not_found'));
 
-    expect(DB::table('fx_rate_snapshots')->orderBy('availability')->pluck('availability')->all())
-        ->toBe(['available', 'stale', 'unavailable'])
-        ->and(DB::table('fx_rate_snapshots')->where('availability', 'stale')->value('effective_date'))->toBe('2026-07-31')
-        ->and(DB::table('fx_rate_snapshots')->where('availability', 'unavailable')->value('effective_date'))->toBeNull()
-        ->and(DB::table('fx_rate_snapshots')->where('availability', 'unavailable')->value('pln_per_unit'))->toBeNull()
-        ->and(DB::table('fx_rate_snapshots')->where('availability', 'unavailable')->value('reason'))->toBe('not_found');
+    $observation = DB::table('fx_rate_snapshots')->sole();
+
+    expect(DB::table('fx_rate_snapshots')->count())->toBe(1)
+        ->and($observation->availability)->toBe('available')
+        ->and($observation->effective_date)->toBe('2026-08-01')
+        ->and((string) $observation->pln_per_unit)->toBe('3.98765432109876543210');
+});
+
+it('replaces less specific FX results when an exact available rate is persisted', function (): void {
+    $service = app(FxRatePersistenceService::class);
+
+    $service->persist(fxRateResult(FxRateAvailability::Stale, '2026-07-31', '3.90000000000000000001', 'effective_date_before_as_of_date'));
+    $service->persist(fxRateResult(FxRateAvailability::Unavailable, null, null, 'not_found'));
+    $service->persist(fxRateResult());
+
+    $observation = DB::table('fx_rate_snapshots')->sole();
+
+    expect($observation->availability)->toBe('available')
+        ->and($observation->effective_date)->toBe('2026-08-01')
+        ->and((string) $observation->pln_per_unit)->toBe('3.98765432109876543210')
+        ->and($observation->reason)->toBeNull();
+});
+
+it('reconciles historical duplicate FX rows by retaining the exact available rate', function (): void {
+    DB::statement('ALTER TABLE fx_rate_snapshots DROP CONSTRAINT fx_rate_snapshots_provider_currency_date_unique');
+    DB::statement('ALTER TABLE fx_rate_snapshots ADD CONSTRAINT fx_rate_snapshots_source_observation_unique UNIQUE (provider_implementation_version, currency, requested_date, source_observation_identity)');
+
+    $now = now();
+    DB::table('fx_rate_snapshots')->insert([
+        [
+            'provider_implementation_version' => 'nbp-table-a-v1',
+            'currency' => 'USD',
+            'requested_date' => '2026-08-01',
+            'source_observation_identity' => hash('sha256', 'available'),
+            'effective_date' => '2026-08-01',
+            'availability' => 'available',
+            'pln_per_unit' => '3.98765432109876543210',
+            'reason' => null,
+            'attempts' => 1,
+            'retrieved_at' => '2026-08-01 10:00:00+00:00',
+            'api_endpoint' => 'https://example.test/fx',
+            'table' => 'A',
+            'source_timezone' => 'Europe/Warsaw',
+            'provider_response_metadata' => json_encode(['table_number' => '151/A/NBP/2026'], JSON_THROW_ON_ERROR),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ],
+        [
+            'provider_implementation_version' => 'nbp-table-a-v1',
+            'currency' => 'USD',
+            'requested_date' => '2026-08-01',
+            'source_observation_identity' => hash('sha256', 'stale'),
+            'effective_date' => '2026-07-31',
+            'availability' => 'stale',
+            'pln_per_unit' => '3.90000000000000000001',
+            'reason' => 'effective_date_before_as_of_date',
+            'attempts' => 1,
+            'retrieved_at' => '2026-08-01 11:00:00+00:00',
+            'api_endpoint' => 'https://example.test/fx',
+            'table' => 'A',
+            'source_timezone' => 'Europe/Warsaw',
+            'provider_response_metadata' => json_encode(['table_number' => '150/A/NBP/2026'], JSON_THROW_ON_ERROR),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ],
+    ]);
+
+    $migration = require base_path('database/migrations/2026_08_14_230000_canonicalize_fx_rate_snapshot_identity.php');
+    $migration->up();
+
+    $observation = DB::table('fx_rate_snapshots')->sole();
+
+    expect($observation->availability)->toBe('available')
+        ->and($observation->effective_date)->toBe('2026-08-01')
+        ->and((string) $observation->pln_per_unit)->toBe('3.98765432109876543210');
 });
 
 it('keeps one logical FX observation when PostgreSQL workers import it concurrently', function (): void {
