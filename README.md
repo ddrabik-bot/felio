@@ -358,6 +358,57 @@ make down     # stop and remove Felio services and its default network
 
 `make down` intentionally preserves the named Docker volumes. Remove them explicitly only when a local reset is required.
 
+## Production PostgreSQL backups
+
+Before any re-registration or import, create and verify a PostgreSQL archive with:
+
+```sh
+make backup
+make backup-check
+```
+
+`make backup` is deliberately pinned to the protected production identity:
+Compose project `felio`, container `felio-db-1`, database `felio`, and volume
+`felio_postgres_data`. Any `FELIO_DB_CONTAINER`, `FELIO_DB_NAME`, or
+`FELIO_DB_VOLUME` setting is rejected rather than used. Before it creates a
+folder, lock, temporary file, archive, checksum, or retention deletion, the
+script canonicalizes the requested destination, rejects every path in the
+protected volume, and allowlists only `/opt/data/backups/felio/` (the default is
+`/opt/data/backups/felio/postgresql/`). It refuses a different identity or an
+unhealthy database. It runs `pg_dump` in the database container but streams the
+custom-format archive straight to `/opt/data/backups/felio/postgresql/`, which
+is outside the Docker volume. The command never resets, truncates, restores,
+changes schema, or writes to the production database. It also validates the
+archive with `pg_restore --list` and writes a SHA-256 sidecar before calling it
+successful.
+
+Archives are named `felio-YYYYMMDDTHHMMSSZ.dump`, directory permissions are set to
+`0700`, and complete archive/checksum pairs older than 30 days are pruned.
+Set `FELIO_BACKUP_RETENTION_DAYS` to a non-negative whole number to change that
+period. Only files matching the Felio archive patterns under the backup directory
+are eligible for this retention action. `make backup-check` additionally fails if
+the latest artifact is absent, its checksum/archive validation fails, the database
+is unhealthy, or it is older than 26 hours; set `FELIO_BACKUP_MAX_AGE_HOURS` to
+change the freshness threshold.
+
+Never restore an archive into production. To exercise the restore path, run:
+
+```sh
+make backup-verify-restore
+# or verify a particular archive by basename:
+./scripts/verify-postgres-backup-restore.sh felio-YYYYMMDDTHHMMSSZ.dump
+```
+
+The verifier requires an archive and checksum inside the backup directory and
+creates a unique `felio-backup-verify-*` Compose project, network, and volume. It
+streams the selected archive into that fresh `felio_backup_verify` database,
+reports a sanitized restored-table count, then removes only those uniquely named
+disposable resources. It exposes no port and never attaches to the production or
+Cloudflare networks.
+No cron or system scheduler is installed by this repository; schedule `make backup`
+through an approved host-level scheduler only after confirming its destination and
+retention policy.
+
 ## Make targets
 
 ```text
@@ -367,6 +418,10 @@ make restart          Restart the running Compose services.
 make logs             Follow Compose service logs.
 make build            Rebuild Compose images.
 make ps               Show Compose service status.
+make backup           Stream and verify a production PostgreSQL archive outside its Docker volume.
+make backup-check     Verify live PostgreSQL health and the newest archive/checksum/freshness.
+make backup-verify-restore Restore an archive only into a unique disposable PostgreSQL Compose project.
+make test-backup-safety Run fail-closed destination and identity override regression coverage.
 make test               Run the complete suite in a disposable PostgreSQL Compose project.
 make test-postgresql    Run the complete suite in a disposable PostgreSQL Compose project.
 make test-auth          Run registration, session login/logout, and password reset coverage in disposable PostgreSQL.

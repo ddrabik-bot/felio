@@ -3,7 +3,7 @@ TEST_COMPOSE = $(COMPOSE) -f docker-compose.test.yml
 # Externally exposed web port; kept in sync with docker-compose.yml.
 HTTP_PORT := 8086
 
-.PHONY: up down restart logs build ps test test-postgresql test-auth test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-scheduler test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
+.PHONY: up down restart logs build ps backup backup-check backup-verify-restore test-backup-safety test test-postgresql test-auth test-compose-isolation test-fx test-valuation test-fx-persistence test-market-data-persistence test-portfolio-persistence test-portfolio-valuation test-portfolio-dashboard test-scheduler test-xtb-import test-xtb-manual-import frontend migrate smoke-migrations spike-yfinance spike-nbp-fx test-nbp-fx-spike
 
 up:
 	$(COMPOSE) up -d
@@ -22,6 +22,22 @@ build:
 
 ps:
 	$(COMPOSE) ps
+
+# Production-safe: streams a custom-format archive to /opt/data/backups, outside the DB volume.
+backup:
+	./scripts/backup-postgres.sh
+
+# Fails if the live DB is unhealthy or the newest verified archive is missing/stale.
+backup-check:
+	./scripts/check-postgres-backup.sh
+
+# Restores only into a new, disposable Compose database and removes it afterward.
+backup-verify-restore:
+	./scripts/verify-postgres-backup-restore.sh
+
+# Regression coverage: rejects unsafe or identity-overridden backup requests before writes.
+test-backup-safety:
+	./tests/scripts/backup-postgres-safety-test.sh
 
 test: test-postgresql
 
