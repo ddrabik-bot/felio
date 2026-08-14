@@ -22,6 +22,7 @@ final readonly class MarketDataRefreshService
         private MarketDataPersistenceService $marketDataPersistence,
         private FxRatePersistenceService $fxRatePersistence,
         private YahooFinanceInstrumentMapper $mapper,
+        private DailyPortfolioSnapshotService $portfolioSnapshots,
     ) {}
 
     public function refresh(DateTimeImmutable $now): void
@@ -85,6 +86,7 @@ final readonly class MarketDataRefreshService
             }
         });
 
+        $this->portfolioSnapshots->snapshot($now);
         $this->recordOutcomes($date, $outcomes);
     }
 

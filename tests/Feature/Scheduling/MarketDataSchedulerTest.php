@@ -82,7 +82,9 @@ it('refreshes only the active confirmed instrument universe and persists exact c
         ->and($fx->calls)->toBe(['USD'])
         ->and(DB::table('daily_ohlc_observations')->value('close'))->toBe('10.123456789012345678')
         ->and(DB::table('fx_rate_snapshots')->value('pln_per_unit'))->toBe('4.123456789012345678')
-        ->and(DB::table('market_data_refresh_outcomes')->count())->toBe(2);
+        ->and(DB::table('market_data_refresh_outcomes')->count())->toBe(2)
+        ->and(DB::table('portfolio_value_snapshots')->where('valuation_date', '2026-08-12')->value('availability'))->toBe('available')
+        ->and(DB::table('portfolio_value_snapshots')->where('valuation_date', '2026-08-12')->value('total_pln_grosze'))->toBe(8349);
 });
 
 it('does not persist partial price or FX data when either provider throws', function (): void {

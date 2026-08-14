@@ -125,8 +125,8 @@ final readonly class NbpTableAFxProvider implements FxRateProvider
 
         $rate = $rates[0];
         $effectiveDate = isset($rate['effectiveDate']) ? DateTimeImmutable::createFromFormat('!Y-m-d', (string) $rate['effectiveDate']) : false;
-        $mid = $rate['mid'] ?? null;
-        if ($effectiveDate === false || ! is_string($mid)) {
+        $mid = $this->exactMid($body);
+        if ($effectiveDate === false || $mid === null) {
             return $this->unavailable($currency, $requestedDate, 'invalid_rate_fields', $attempts, $retrievedAt, $endpoint);
         }
 
@@ -163,6 +163,18 @@ final readonly class NbpTableAFxProvider implements FxRateProvider
             self::IMPLEMENTATION_VERSION,
             self::API_CONTRACT,
         );
+    }
+
+    private function exactMid(string $body): ?string
+    {
+        $matches = [];
+        $decimal = '(?:0|[1-9]\\d*)(?:\\.\\d+)?';
+        $count = preg_match_all('/"mid"\\s*:\\s*(?:"('.$decimal.')"|('.$decimal.'))(?=\\s*[,}])/D', $body, $matches);
+        if ($count !== 1) {
+            return null;
+        }
+
+        return $matches[1][0] !== '' ? $matches[1][0] : $matches[2][0];
     }
 
     private function unavailable(
