@@ -51,6 +51,7 @@ final class PortfolioValuationDashboardController extends Controller
             'allocation' => $allocation,
             'kpis' => [
                 'totalValuePlnGrosze' => $valuation['totalPlnGrosze'],
+                'partialValuePlnGrosze' => $valuation['partialTotalPlnGrosze'],
                 'investedCapitalPlnGrosze' => $invested,
                 'investedCapitalAvailability' => $invested === null ? 'unavailable' : 'available',
                 'profitLossPlnGrosze' => $profitLoss,
@@ -61,15 +62,24 @@ final class PortfolioValuationDashboardController extends Controller
         ]);
     }
 
-    /** @return array{totalPlnGrosze: ?string, availability: string, source: string, diagnostics: list<string>} */
+    /** @return array{totalPlnGrosze: ?string, partialTotalPlnGrosze: ?string, availability: string, source: string, diagnostics: list<string>, warnings: list<string>} */
     private function selectedValuation(PortfolioValuationReadModel $computed): array
     {
-        $available = $computed->rows !== [] && collect($computed->rows)->every(static fn (PortfolioValuationRow $row): bool => $row->plnGrosze !== null);
-        $diagnostics = $computed->rows === []
-            ? ['no_confirmed_positions']
-            : array_values(array_unique(array_merge(...array_map(static fn (PortfolioValuationRow $row): array => $row->diagnostics, $computed->rows))));
+        $hasPositions = $computed->rows !== [];
+        $allAvailable = $hasPositions && collect($computed->rows)->every(static fn (PortfolioValuationRow $row): bool => $row->plnGrosze !== null);
+        $hasAvailableValue = collect($computed->rows)->contains(static fn (PortfolioValuationRow $row): bool => $row->plnGrosze !== null);
+        $diagnostics = $hasPositions
+            ? array_values(array_unique(array_merge(...array_map(static fn (PortfolioValuationRow $row): array => $row->diagnostics, $computed->rows))))
+            : ['no_confirmed_positions'];
 
-        return ['totalPlnGrosze' => $available ? (string) $computed->totalPlnGrosze : null, 'availability' => $available ? 'available' : 'unavailable', 'source' => 'computed_read_model', 'diagnostics' => $available ? [] : $diagnostics];
+        return [
+            'totalPlnGrosze' => $allAvailable ? (string) $computed->totalPlnGrosze : null,
+            'partialTotalPlnGrosze' => $allAvailable || ! $hasAvailableValue ? null : (string) $computed->totalPlnGrosze,
+            'availability' => $allAvailable ? 'available' : ($hasAvailableValue ? 'incomplete' : 'unavailable'),
+            'source' => 'computed_read_model',
+            'diagnostics' => $allAvailable ? [] : $diagnostics,
+            'warnings' => $allAvailable || ! $hasAvailableValue ? [] : ['incomplete_valuation'],
+        ];
     }
 
     /** @return list<array{date: string, availability: string, totalPlnGrosze: ?string, source: string, diagnostics: list<string>}> */
@@ -160,7 +170,6 @@ final class PortfolioValuationDashboardController extends Controller
 
         return array_reduce($rows, static fn (string $total, PortfolioValuationRow $row): string => bcadd($total, (string) $row->averageCostPlnGrosze, 0), '0');
     }
-
 
     private function returnBps(string $start, string $end): ?string
     {

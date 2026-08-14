@@ -6,8 +6,15 @@ final class YahooFinanceInstrumentMapper
 {
     public function map(CanonicalInstrument $instrument): ?ProviderInstrumentMapping
     {
-        if ($instrument->value === 'OTLK.US') {
-            return $this->mapping($instrument, 'OTLK', 'NCM', 'USD');
+        foreach ([
+            'OTLK.US' => ['OTLK', 'NCM', 'USD'],
+            'ARMG.UK' => ['ARMG.L', 'LSE', 'GBP'],
+            'SPCE.US' => ['SPCE', 'NYQ', 'USD'],
+            'SPXC.US' => ['SPXC', 'NYQ', 'USD'],
+        ] as $canonicalInstrument => [$symbol, $exchange, $quoteCurrency]) {
+            if ($instrument->value === $canonicalInstrument) {
+                return $this->mapping($instrument, $symbol, $exchange, $quoteCurrency);
+            }
         }
 
         if (str_ends_with($instrument->value, '.PL')) {

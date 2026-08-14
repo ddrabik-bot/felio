@@ -23,6 +23,24 @@ it('maps the OTLK broker symbol to its Yahoo Finance symbol without changing Fel
         ->and($mapping->quoteCurrency)->toBe('USD');
 });
 
+it('maps the verified affected broker symbols to their exact Yahoo Finance instruments', function (): void {
+    $mapper = new YahooFinanceInstrumentMapper;
+
+    foreach ([
+        'ARMG.UK' => ['ARMG.L', 'LSE', 'GBP'],
+        'SPCE.US' => ['SPCE', 'NYQ', 'USD'],
+        'SPXC.US' => ['SPXC', 'NYQ', 'USD'],
+    ] as $instrument => [$symbol, $exchange, $currency]) {
+        $mapping = $mapper->map(new CanonicalInstrument($instrument));
+
+        expect($mapping->instrument->value)->toBe($instrument)
+            ->and($mapping->provider)->toBe(MarketDataProviderName::YahooFinance)
+            ->and($mapping->symbol->value)->toBe($symbol)
+            ->and($mapping->exchange)->toBe($exchange)
+            ->and($mapping->quoteCurrency)->toBe($currency);
+    }
+});
+
 it('maps Polish instruments to the explicit Warsaw provider suffix', function (): void {
     $mapping = (new YahooFinanceInstrumentMapper)->map(new CanonicalInstrument('PZU.PL'));
 

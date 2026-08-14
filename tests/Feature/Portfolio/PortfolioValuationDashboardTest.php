@@ -169,6 +169,28 @@ it('keeps unavailable positions and stale FX diagnostics visible without fabrica
         );
 });
 
+it('exposes the exact available subtotal and explicit incomplete warning when a position cannot be valued', function (): void {
+    dashboardImportPosition('dashboard-partial-supported', '2026-01-02T00:00:00+01:00', 'PZU.PL', '2', 1000);
+    dashboardImportPosition('dashboard-partial-unmapped', '2026-01-02T00:00:00+01:00', 'UNMAPPED.US', '3', 2000);
+    dashboardPrice('PZU.PL', '2026-01-02', 'PLN', '10');
+
+    $this->get('/portfolio/valuation?date=2026-01-02&range=1D')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totalPlnGrosze', null)
+            ->where('valuation.availability', 'incomplete')
+            ->where('valuation.partialTotalPlnGrosze', '2000')
+            ->where('valuation.warnings', ['incomplete_valuation'])
+            ->where('kpis.totalValuePlnGrosze', null)
+            ->where('kpis.partialValuePlnGrosze', '2000')
+            ->where('positions.0.instrument', 'PZU.PL')
+            ->where('positions.0.plnGrosze', 2000)
+            ->where('positions.1.instrument', 'UNMAPPED.US')
+            ->where('positions.1.plnGrosze', null)
+            ->where('positions.1.diagnostics', ['price_unavailable:market_price_missing_exact_date'])
+        );
+});
+
 it('serializes large total PLN grosze as an exact decimal string', function (): void {
     dashboardImportPosition('dashboard-large-total', '2026-01-02T00:00:00+01:00', 'LARGE.PL', '1');
     dashboardPrice('LARGE.PL', '2026-01-02', 'PLN', '90071992547409.93');
