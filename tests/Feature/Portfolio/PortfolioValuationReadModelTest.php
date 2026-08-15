@@ -24,9 +24,9 @@ function price(string $instrument, string $date, string $currency, string $close
     $id = DB::table('market_data_snapshots')->insertGetId(['canonical_instrument' => $instrument, 'provider' => $provider, 'provider_symbol' => $instrument, 'exchange' => 'XWAR', 'quote_currency' => $currency, 'session_date' => $date, 'retrieved_at' => now(), 'source_timezone' => 'Europe/Warsaw', 'provider_version' => 'test', 'created_at' => now(), 'updated_at' => now()]);
     DB::table('daily_ohlc_observations')->insert(['market_data_snapshot_id' => $id, 'trading_date' => $date, 'open' => $close, 'high' => $close, 'low' => $close, 'close' => $close, 'created_at' => now(), 'updated_at' => now()]);
 }
-function fx(string $currency, string $date, string $availability, ?string $rate, string $identity): void
+function fx(string $currency, string $date, string $availability, ?string $rate, string $identity, ?string $effectiveDate = null): void
 {
-    DB::table('fx_rate_snapshots')->insert(['provider_implementation_version' => 'nbp-test', 'currency' => $currency, 'requested_date' => $date, 'effective_date' => $availability === 'stale' ? '2026-01-01' : $date, 'availability' => $availability, 'pln_per_unit' => $rate, 'reason' => $availability === 'stale' ? 'source_stale' : null, 'attempts' => 1, 'retrieved_at' => now(), 'api_endpoint' => 'https://example.test/fx', 'table' => 'A', 'source_timezone' => 'Europe/Warsaw', 'provider_response_metadata' => '{}', 'source_observation_identity' => hash('sha256', $identity), 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('fx_rate_snapshots')->insert(['provider_implementation_version' => 'nbp-test', 'currency' => $currency, 'requested_date' => $date, 'effective_date' => $effectiveDate ?? ($availability === 'stale' ? '2026-01-01' : $date), 'availability' => $availability, 'pln_per_unit' => $rate, 'reason' => $availability === 'stale' ? 'source_stale' : null, 'attempts' => 1, 'retrieved_at' => now(), 'api_endpoint' => 'https://example.test/fx', 'table' => 'A', 'source_timezone' => 'Europe/Warsaw', 'provider_response_metadata' => '{}', 'source_observation_identity' => hash('sha256', $identity), 'created_at' => now(), 'updated_at' => now()]);
 }
 function valuation(StaleFxRatePolicy $policy = StaleFxRatePolicy::Reject): PortfolioValuationService
 {
@@ -82,6 +82,20 @@ it('forward-fills a weekend valuation from the latest price and FX observations'
         ->and($read->rows[0]->sourcePrice->usedDate?->format('Y-m-d'))->toBe('2026-08-14')
         ->and($read->rows[0]->sourcePrice->availability->value)->toBe('stale')
         ->and($read->rows[0]->fxRate?->requestedDate->format('Y-m-d'))->toBe('2026-08-15')
+        ->and($read->rows[0]->fxRate?->effectiveDate?->format('Y-m-d'))->toBe('2026-08-14')
+        ->and($read->rows[0]->fxRate?->availability->value)->toBe('available')
+        ->and($read->totalPlnGrosze)->toBe(12338);
+});
+
+it('prefers the canonical available FX observation when a weekend stale row shares its effective date', function (): void {
+    importPosition('weekend-foreign-duplicate-effective-date', '2026-08-14T00:00:00+02:00', 'ACME.US', '3');
+    price('ACME.US', '2026-08-14', 'USD', '10.25');
+    fx('USD', '2026-08-14', 'available', '4.012345678901234567', 'friday-canonical');
+    fx('USD', '2026-08-15', 'stale', '4.800000000000000000', 'saturday-stale', '2026-08-14');
+
+    $read = valuation()->read(new DateTimeImmutable('2026-08-15T20:00:00+02:00'), valuationAccountId());
+
+    expect($read->rows[0]->plnGrosze)->toBe(12338)
         ->and($read->rows[0]->fxRate?->effectiveDate?->format('Y-m-d'))->toBe('2026-08-14')
         ->and($read->rows[0]->fxRate?->availability->value)->toBe('available')
         ->and($read->totalPlnGrosze)->toBe(12338);

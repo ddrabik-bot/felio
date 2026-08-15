@@ -107,13 +107,30 @@ final class EloquentPortfolioValuationReadRepository implements PortfolioValuati
         if ($candidates->isEmpty()) {
             return null;
         }
-        $usedDate = $candidates->first()->effective_date;
-        $candidates = $candidates->where('effective_date', $usedDate)->values();
-        if ($candidates->count() !== 1) {
-            return $this->unavailableFxRate($currency, $valuationDate, 'fx_rate_ambiguous_on_used_date');
+        $candidates = $candidates->filter(static fn (object $candidate): bool => (
+            $candidate->availability === FxRateAvailability::Available->value
+            && $candidate->requested_date === $candidate->effective_date
+        ) || $candidate->availability === FxRateAvailability::Stale->value)->values();
+        if ($candidates->isEmpty()) {
+            return null;
         }
 
-        $candidate = $candidates->first();
+        $usedDate = $candidates->first()->effective_date;
+        $candidates = $candidates->where('effective_date', $usedDate)->values();
+        $canonicalAvailable = $candidates->filter(static fn (object $candidate): bool => (
+            $candidate->availability === FxRateAvailability::Available->value
+            && $candidate->requested_date === $candidate->effective_date
+        ))->values();
+        if ($canonicalAvailable->count() > 1) {
+            return $this->unavailableFxRate($currency, $valuationDate, 'fx_rate_ambiguous_canonical_available_on_used_date');
+        }
+
+        $candidate = $canonicalAvailable->first() ?? $candidates
+            ->where('availability', FxRateAvailability::Stale->value)
+            ->first();
+        if ($candidate === null) {
+            return $this->unavailableFxRate($currency, $valuationDate, 'fx_rate_missing_valid_observation_on_used_date');
+        }
 
         return new FxRateResult($candidate->currency, $valuationDate, $candidate->effective_date === null ? null : new DateTimeImmutable($candidate->effective_date.'T00:00:00+00:00'), FxRateAvailability::from($candidate->availability), (string) $candidate->pln_per_unit, $candidate->reason, (int) $candidate->attempts, new DateTimeImmutable($candidate->retrieved_at), $candidate->api_endpoint, $candidate->table, null, $candidate->source_timezone, $candidate->provider_implementation_version, 'persisted_snapshot');
     }
