@@ -71,14 +71,41 @@ it('reads the same aggregate XTB trade position in historical valuation instead 
         ->and($read->rows[0]->quantity)->toBe('38');
 });
 
-it('uses only exact-date market and FX observations and preserves unavailable diagnostics', function (): void {
+it('forward-fills a weekend valuation from the latest price and FX observations', function (): void {
+    importPosition('weekend-foreign', '2026-08-14T00:00:00+02:00', 'ACME.US', '3');
+    price('ACME.US', '2026-08-14', 'USD', '10.25');
+    fx('USD', '2026-08-14', 'available', '4.012345678901234567', 'weekend-friday');
+
+    $read = valuation()->read(new DateTimeImmutable('2026-08-15T20:00:00+02:00'), valuationAccountId());
+
+    expect($read->rows[0]->plnGrosze)->toBe(12338)
+        ->and($read->rows[0]->sourcePrice->usedDate?->format('Y-m-d'))->toBe('2026-08-14')
+        ->and($read->rows[0]->sourcePrice->availability->value)->toBe('stale')
+        ->and($read->rows[0]->fxRate?->requestedDate->format('Y-m-d'))->toBe('2026-08-15')
+        ->and($read->rows[0]->fxRate?->effectiveDate?->format('Y-m-d'))->toBe('2026-08-14')
+        ->and($read->rows[0]->fxRate?->availability->value)->toBe('available')
+        ->and($read->totalPlnGrosze)->toBe(12338);
+});
+
+it('forward-fills from the prior trading session when no observation exists on a weekday', function (): void {
+    importPosition('prior-session', '2026-08-14T00:00:00+02:00', 'PZU.PL', '2');
+    price('PZU.PL', '2026-08-14', 'PLN', '10');
+
+    $read = valuation()->read(new DateTimeImmutable('2026-08-17T20:00:00+02:00'), valuationAccountId());
+
+    expect($read->rows[0]->plnGrosze)->toBe(2000)
+        ->and($read->rows[0]->sourcePrice->usedDate?->format('Y-m-d'))->toBe('2026-08-14')
+        ->and($read->rows[0]->sourcePrice->availability->value)->toBe('stale')
+        ->and($read->totalPlnGrosze)->toBe(2000);
+});
+
+it('remains unavailable when no earlier market or FX observation exists', function (): void {
     importPosition('foreign', '2026-01-02T00:00:00+01:00', 'ACME.US', '3');
-    price('ACME.US', '2026-01-02', 'USD', '10');
 
     $read = valuation()->read(new DateTimeImmutable('2026-01-02T20:00:00+01:00'), valuationAccountId());
 
     expect($read->rows[0]->plnGrosze)->toBeNull()
-        ->and($read->rows[0]->diagnostics)->toContain('fx_rate_missing')
+        ->and($read->rows[0]->diagnostics)->toContain('price_unavailable:market_price_missing_on_or_before_date')
         ->and($read->totalPlnGrosze)->toBe(0);
 });
 

@@ -98,8 +98,29 @@ it('renders an authenticated dashboard for an explicit valuation date', function
             ->where('positions.0.quantity', '2')
             ->where('positions.0.sourcePrice.amount', '10')
             ->where('positions.0.sourcePrice.currency', 'PLN')
+            ->where('positions.0.sourcePrice.usedDate', '2026-01-02')
             ->where('positions.0.fx.status', 'not_required')
             ->where('positions.0.plnGrosze', 2000)
+        );
+});
+
+it('renders the dates actually used by a forward-filled weekend valuation', function (): void {
+    dashboardImportPosition('dashboard-weekend', '2026-08-14T00:00:00+02:00', 'OTLK.US', '3');
+    dashboardPrice('OTLK.US', '2026-08-14', 'USD', '10.25');
+    dashboardFx('USD', '2026-08-14', 'available', '4.012345678901234567', 'dashboard-weekend-fx');
+
+    $this->get('/portfolio/valuation?date=2026-08-15')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('totalPlnGrosze', '12338')
+            ->where('valuation.availability', 'available')
+            ->where('positions.0.availability', 'stale')
+            ->where('positions.0.sourcePrice.amount', '10.25')
+            ->where('positions.0.sourcePrice.usedDate', '2026-08-14')
+            ->where('positions.0.sourcePrice.diagnostic', 'market_price_forward_filled')
+            ->where('positions.0.fx.status', 'available')
+            ->where('positions.0.fx.requestedDate', '2026-08-15')
+            ->where('positions.0.fx.usedDate', '2026-08-14')
         );
 });
 
@@ -158,7 +179,7 @@ it('keeps unavailable positions and stale FX diagnostics visible without fabrica
             ->where('positions.0.instrument', 'ALPHA.PL')
             ->where('positions.0.availability', 'unavailable')
             ->where('positions.0.sourcePrice.amount', null)
-            ->where('positions.0.sourcePrice.diagnostic', 'market_price_missing_exact_date')
+            ->where('positions.0.sourcePrice.diagnostic', 'market_price_missing_on_or_before_date')
             ->where('positions.0.plnGrosze', null)
             ->where('positions.1.instrument', 'ZULU.US')
             ->where('positions.1.availability', 'unavailable')
@@ -187,7 +208,7 @@ it('exposes the exact available subtotal and explicit incomplete warning when a 
             ->where('positions.0.plnGrosze', 2000)
             ->where('positions.1.instrument', 'UNMAPPED.US')
             ->where('positions.1.plnGrosze', null)
-            ->where('positions.1.diagnostics', ['price_unavailable:market_price_missing_exact_date'])
+            ->where('positions.1.diagnostics', ['price_unavailable:market_price_missing_on_or_before_date'])
         );
 });
 

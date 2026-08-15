@@ -2,6 +2,7 @@
 
 namespace App\Domain\Valuation;
 
+use DateTimeImmutable;
 use InvalidArgumentException;
 
 final readonly class PriceQuote
@@ -11,6 +12,7 @@ final readonly class PriceQuote
         public ?string $pricePerUnit,
         public ValuationAvailability $availability,
         public ?string $diagnostic = null,
+        public ?DateTimeImmutable $usedDate = null,
     ) {
         if (! preg_match('/^[A-Z]{3}$/', $currency)) {
             throw new InvalidArgumentException('Price currency must be a three-letter uppercase ISO code.');

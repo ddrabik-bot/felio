@@ -58,40 +58,64 @@ final class EloquentPortfolioValuationReadRepository implements PortfolioValuati
         $candidates = DB::table('market_data_snapshots as snapshots')
             ->join('daily_ohlc_observations as observations', 'observations.market_data_snapshot_id', '=', 'snapshots.id')
             ->where('snapshots.canonical_instrument', $canonicalInstrument)
-            ->where('snapshots.session_date', $date)
-            ->where('observations.trading_date', $date)
+            ->whereColumn('snapshots.session_date', 'observations.trading_date')
+            ->where('snapshots.session_date', '<=', $date)
+            ->where('observations.trading_date', '<=', $date)
+            ->orderByDesc('observations.trading_date')
             ->orderBy('snapshots.provider')
             ->orderBy('snapshots.provider_symbol')
             ->orderBy('snapshots.id')
-            ->select(['snapshots.quote_currency', 'observations.close'])
+            ->select(['snapshots.quote_currency', 'observations.close', 'observations.trading_date'])
             ->get();
 
         if ($candidates->isEmpty()) {
-            return new PriceQuote('PLN', null, ValuationAvailability::Unavailable, 'market_price_missing_exact_date');
+            return new PriceQuote('PLN', null, ValuationAvailability::Unavailable, 'market_price_missing_on_or_before_date');
         }
+        $usedDate = $candidates->first()->trading_date;
+        $candidates = $candidates->where('trading_date', $usedDate)->values();
         if ($candidates->count() !== 1) {
-            return new PriceQuote('PLN', null, ValuationAvailability::Unavailable, 'market_price_ambiguous_exact_date');
+            return new PriceQuote('PLN', null, ValuationAvailability::Unavailable, 'market_price_ambiguous_on_used_date');
         }
 
         $candidate = $candidates->first();
 
-        return new PriceQuote($candidate->quote_currency, (string) $candidate->close, ValuationAvailability::Available);
+        $isForwardFilled = $usedDate !== $date;
+
+        return new PriceQuote(
+            $candidate->quote_currency,
+            (string) $candidate->close,
+            $isForwardFilled ? ValuationAvailability::Stale : ValuationAvailability::Available,
+            $isForwardFilled ? 'market_price_forward_filled' : null,
+            new DateTimeImmutable($usedDate.'T00:00:00+00:00'),
+        );
     }
 
     public function fxRateFor(string $currency, DateTimeImmutable $valuationDate): ?FxRateResult
     {
-        $candidates = DB::table('fx_rate_snapshots')->where('currency', $currency)->where('requested_date', $valuationDate->format('Y-m-d'))
-            ->orderBy('provider_implementation_version')->orderBy('source_observation_identity')->orderBy('id')->get();
+        $date = $valuationDate->format('Y-m-d');
+        $candidates = DB::table('fx_rate_snapshots')
+            ->where('currency', $currency)
+            ->where('requested_date', '<=', $date)
+            ->whereIn('availability', [FxRateAvailability::Available->value, FxRateAvailability::Stale->value])
+            ->whereNotNull('pln_per_unit')
+            ->orderByDesc('effective_date')
+            ->orderByDesc('requested_date')
+            ->orderBy('provider_implementation_version')
+            ->orderBy('source_observation_identity')
+            ->orderBy('id')
+            ->get();
         if ($candidates->isEmpty()) {
             return null;
         }
+        $usedDate = $candidates->first()->effective_date;
+        $candidates = $candidates->where('effective_date', $usedDate)->values();
         if ($candidates->count() !== 1) {
-            return $this->unavailableFxRate($currency, $valuationDate, 'fx_rate_ambiguous_exact_date');
+            return $this->unavailableFxRate($currency, $valuationDate, 'fx_rate_ambiguous_on_used_date');
         }
 
         $candidate = $candidates->first();
 
-        return new FxRateResult($candidate->currency, new DateTimeImmutable($candidate->requested_date.'T00:00:00+00:00'), $candidate->effective_date === null ? null : new DateTimeImmutable($candidate->effective_date.'T00:00:00+00:00'), FxRateAvailability::from($candidate->availability), $candidate->pln_per_unit === null ? null : (string) $candidate->pln_per_unit, $candidate->reason, (int) $candidate->attempts, new DateTimeImmutable($candidate->retrieved_at), $candidate->api_endpoint, $candidate->table, null, $candidate->source_timezone, $candidate->provider_implementation_version, 'persisted_snapshot');
+        return new FxRateResult($candidate->currency, $valuationDate, $candidate->effective_date === null ? null : new DateTimeImmutable($candidate->effective_date.'T00:00:00+00:00'), FxRateAvailability::from($candidate->availability), (string) $candidate->pln_per_unit, $candidate->reason, (int) $candidate->attempts, new DateTimeImmutable($candidate->retrieved_at), $candidate->api_endpoint, $candidate->table, null, $candidate->source_timezone, $candidate->provider_implementation_version, 'persisted_snapshot');
     }
 
     private function unavailableFxRate(string $currency, DateTimeImmutable $valuationDate, string $reason): FxRateResult
